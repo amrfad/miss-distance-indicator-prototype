@@ -14,6 +14,8 @@ from .serial_manager import SerialManager
 from .file_transfer import FileTransferManager
 from .json_receiver import JsonReceiver
 from .screens import HomeScreen, CommandScreen, ProcessScreen, VisualizeScreen
+from .config_manager import GroundConfigManager
+from .config_api import start_ground_api_thread
 
 
 class EventGUI:
@@ -47,6 +49,13 @@ class EventGUI:
         self.log_text = None          # Set oleh screen yang aktif
         self.log_buffer = []          # Buffer pesan sebelum log_text siap
         self.working_directory = os.getcwd()  # Menggantikan os.chdir()
+
+        # ---------------------------------------------------------------
+        # Ground Config Manager + REST API (daemon thread)
+        # ---------------------------------------------------------------
+        self.ground_config_manager = GroundConfigManager()
+        self.ground_config_manager.apply_to_module()
+        start_ground_api_thread(self.ground_config_manager, port=5001)
 
         # ---------------------------------------------------------------
         # Module initialization

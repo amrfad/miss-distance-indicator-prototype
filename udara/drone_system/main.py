@@ -17,6 +17,8 @@ from .config import (
     OPERATION_MODE
 )
 from .processor import NOISEREDUCE_AVAILABLE
+from .config_manager import ConfigManager, ConfigError
+from .config_api import start_api_thread
 
 
 def print_header():
@@ -64,7 +66,7 @@ def get_keyboard_command():
         return 'QUIT'
 
 
-def process_command(command, audio_system, serial_handler=None):
+def process_command(command, audio_system, serial_handler=None, config_manager=None):
     """
     Proses command dari ground station
     
@@ -72,6 +74,7 @@ def process_command(command, audio_system, serial_handler=None):
         command (str): Command yang diterima
         audio_system (DroneAudioSystem): Instance sistem audio
         serial_handler (SerialHandler): Instance serial handler
+        config_manager (ConfigManager): Instance config manager (optional)
     """
     print(f"\n[RECEIVED] {command}")
     
@@ -115,6 +118,9 @@ def process_command(command, audio_system, serial_handler=None):
             print("="*50)
         
         response = f"OK:Recorder={rec_info['is_recording']},Features={info['processor_features']}"
+
+    elif command == "SET_CONFIG":
+        response = _handle_set_config(serial_handler, config_manager, audio_system)
         
     else:
         response = f"ERROR:Unknown command '{command}'"
@@ -126,20 +132,106 @@ def process_command(command, audio_system, serial_handler=None):
         print(f"[RESPONSE] {response}")
 
 
+def _handle_set_config(serial_handler, config_manager, audio_system):
+    """
+    Handler untuk command SET_CONFIG via serial (section 5 contract).
+
+    Protokol yang diharapkan setelah 'SET_CONFIG\n' diterima:
+        [CONFIG_START]\n
+        {json_content}\n
+        [CONFIG_END]\n
+
+    Returns:
+        str: Response string untuk dikirim ke ground
+    """
+    import json
+    from .config import CONFIG_TX_START_MARKER, CONFIG_TX_END_MARKER
+
+    if config_manager is None:
+        return "ERROR:SET_CONFIG:SERVER_ERROR:ConfigManager tidak tersedia"
+
+    TIMEOUT = 5.0  # detik menunggu payload
+
+    def read_line_with_timeout(timeout=TIMEOUT):
+        """Baca satu baris dari serial dengan timeout."""
+        if serial_handler is None:
+            return None
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            line = serial_handler.read_command()
+            if line is not None:
+                return line
+            time.sleep(0.05)
+        return None
+
+    # 1. Baca [CONFIG_START]
+    start_line = read_line_with_timeout()
+    if start_line != CONFIG_TX_START_MARKER:
+        print(f"[SET_CONFIG] Expected '{CONFIG_TX_START_MARKER}', got: {start_line!r}")
+        return "ERROR:SET_CONFIG:VALIDATION_ERROR:Missing CONFIG_START marker"
+
+    # 2. Baca JSON content
+    json_line = read_line_with_timeout()
+    if json_line is None:
+        return "ERROR:SET_CONFIG:VALIDATION_ERROR:Timeout waiting for JSON payload"
+
+    # 3. Baca [CONFIG_END]
+    end_line = read_line_with_timeout()
+    if end_line != CONFIG_TX_END_MARKER:
+        print(f"[SET_CONFIG] Expected '{CONFIG_TX_END_MARKER}', got: {end_line!r}")
+        return "ERROR:SET_CONFIG:VALIDATION_ERROR:Missing CONFIG_END marker"
+
+    # 4. Parse JSON
+    try:
+        changes = json.loads(json_line)
+    except json.JSONDecodeError as e:
+        return f"ERROR:SET_CONFIG:VALIDATION_ERROR:JSON parse error: {e}"
+
+    if not isinstance(changes, dict):
+        return "ERROR:SET_CONFIG:VALIDATION_ERROR:Payload harus JSON object"
+
+    # 5. Apply via ConfigManager (source="serial" → reject 🔒 params)
+    try:
+        result = config_manager.update(changes, source="serial")
+    except ConfigError as e:
+        return f"ERROR:SET_CONFIG:{e.code}:{e.message}"
+
+    # 6. Apply ke runtime objects
+    if audio_system is not None:
+        detector = getattr(audio_system, "detector", None)
+        config_manager.apply_to_runtime_objects(detector=detector)
+
+    n_updated = len(result.get("updated", {}))
+    return f"OK:SET_CONFIG:{n_updated} params updated"
+
+
 def main():
     """Main loop aplikasi"""
     print_header()
-    
-    # Initialize system
+
+    # Initialize ConfigManager (load overrides dari disk jika ada)
+    config_manager = ConfigManager()
+    config_manager.apply_to_module()
+
+    # Initialize audio system (setelah config ter-apply)
     audio_system = DroneAudioSystem()
-    
-    if OPERATION_MODE == "ONLINE":
-        return run_online_mode(audio_system)
+
+    # Apply runtime config ke detector (yang sudah instantiated)
+    config_manager.apply_to_runtime_objects(
+        detector=audio_system.detector,
+        processor=audio_system.processor,
+    )
+
+    # Start Config REST API di daemon thread
+    start_api_thread(config_manager, audio_system, port=5000)
+
+    if config_manager.get("operation_mode") == "ONLINE":
+        return run_online_mode(audio_system, config_manager)
     else:
-        return run_offline_mode(audio_system)
+        return run_offline_mode(audio_system, config_manager)
 
 
-def run_online_mode(audio_system):
+def run_online_mode(audio_system, config_manager=None):
     """Run dalam ONLINE mode dengan serial communication"""
     serial_handler = SerialHandler()
     
@@ -158,10 +250,16 @@ def run_online_mode(audio_system):
             command = serial_handler.read_command()
             
             if command:
-                process_command(command, audio_system, serial_handler)
+                process_command(command, audio_system, serial_handler, config_manager)
             
-            # Small delay untuk mengurangi CPU usage
-            time.sleep(MAIN_LOOP_DELAY)
+            # Small delay — baca dari config_manager agar bisa di-update runtime
+            loop_delay = MAIN_LOOP_DELAY
+            if config_manager is not None:
+                try:
+                    loop_delay = config_manager.get("main_loop_delay")
+                except Exception:
+                    pass
+            time.sleep(loop_delay)
             
     except KeyboardInterrupt:
         print("\n\n[SYSTEM] Shutting down...")
@@ -178,7 +276,7 @@ def run_online_mode(audio_system):
     return 0
 
 
-def run_offline_mode(audio_system):
+def run_offline_mode(audio_system, config_manager=None):
     """Run dalam OFFLINE mode dengan keyboard input"""
     try:
         while True:
@@ -190,7 +288,8 @@ def run_offline_mode(audio_system):
                 break
             
             if command:
-                process_command(command, audio_system, serial_handler=None)
+                process_command(command, audio_system, serial_handler=None,
+                                config_manager=config_manager)
             
     except KeyboardInterrupt:
         print("\n\n[SYSTEM] Shutting down...")
