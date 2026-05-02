@@ -1,0 +1,14 @@
+{
+  "sample_rate": 44100,
+  "num_mics": 6,
+  "hop_length": 512,
+  "buffer_duration": 2.0,
+  "detect_ratio": 3.0,
+  "filter_ratio": 1.5,
+  "min_duration_ms": 200,
+  "use_gcc_phat": true,
+  "max_tau": 100,
+  "audio_device": "default",
+  "serial_port": "COM3",
+  "baud_rate": 115200
+}
