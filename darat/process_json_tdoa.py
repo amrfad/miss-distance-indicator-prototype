@@ -1,3 +1,14 @@
+"""
+TDOA Processing Module (Refactored)
+Perubahan dari versi original:
+  - Hapus dead code: find_largest_cluster() dan select_best_cluster() (tidak pernah dipanggil)
+  - Clustering logic dikonsolidasi ke _cluster_solutions() helper internal
+  - MIC_POSITIONS tetap di sini untuk backward compat dengan process_screen.py
+    (juga tersedia di config.py untuk modul baru)
+  - SPEED_OF_SOUND tetap sebagai module-level constant (digunakan di beberapa fungsi)
+  - Semua proses bisnis identik dengan versi original
+"""
+
 import numpy as np
 import json
 import math
@@ -141,11 +152,20 @@ def bucher_misra_3d(
     return uniq
 
 
-def find_largest_cluster(solutions, eps=1.0):
+def _cluster_solutions(solutions, eps=1.0):
+    """
+    Kelompokkan solusi ke dalam cluster berdasarkan jarak euclidean.
+    Menggantikan logika clustering yang sebelumnya terduplikasi di dua tempat.
+
+    Returns:
+        list of clusters (tiap cluster adalah list of (x,y,z) tuples), diurutkan desc by size.
+    """
     if not solutions:
         return []
-    clusters = []
+
+    all_clusters = []
     assigned_indices = set()
+
     for i, sol1 in enumerate(solutions):
         if i in assigned_indices:
             continue
@@ -154,55 +174,17 @@ def find_largest_cluster(solutions, eps=1.0):
         for j, sol2 in enumerate(solutions):
             if j in assigned_indices:
                 continue
-            is_close_to_cluster = any(
+            is_close = any(
                 np.linalg.norm(np.array(sol2) - np.array(member)) < eps
                 for member in current_cluster
             )
-            if is_close_to_cluster:
+            if is_close:
                 current_cluster.append(sol2)
                 assigned_indices.add(j)
-        clusters.append(current_cluster)
-    if not clusters:
-        return []
-    largest_cluster = max(clusters, key=len)
-    return largest_cluster
+        all_clusters.append(current_cluster)
 
-
-def select_best_cluster(clusters, mic_positions):
-    """Pilih cluster terbaik berdasarkan jarak ke centroid mikrofon dan ukuran cluster"""
-    if not clusters:
-        return []
-
-    # Hitung centroid mikrofon
-    mic_centroid = np.mean([pos for pos in mic_positions.values()], axis=0)
-    # print(f"Mic centroid: [{mic_centroid[0], mic_centroid[1], mic_centroid[2]}]")
-
-    # Evaluasi setiap cluster
-    best_cluster = None
-    best_score = float("inf")
-
-    for cluster in clusters:
-        if not cluster:
-            continue
-
-        # Hitung centroid cluster
-        cluster_centroid = np.mean(cluster, axis=0)
-
-        # Hitung jarak ke centroid mikrofon
-        distance = np.linalg.norm(cluster_centroid - mic_centroid)
-
-        # Score: prioritaskan ukuran cluster besar DAN jarak dekat
-        # Bobot: lebih prioritas ke ukuran cluster
-        size_penalty = 1.0 / len(cluster)  # Makin besar cluster, makin kecil penalty
-        distance_penalty = distance / 10.0  # Normalize jarak
-
-        score = size_penalty + distance_penalty
-
-        if score < best_score:
-            best_score = score
-            best_cluster = cluster
-
-    return best_cluster if best_cluster else []
+    all_clusters.sort(key=len, reverse=True)
+    return all_clusters
 
 
 def tdoa_residuals(pos, mic_positions_list, tdoa_measurements, c=SPEED_OF_SOUND):
@@ -221,22 +203,14 @@ def tdoa_residuals(pos, mic_positions_list, tdoa_measurements, c=SPEED_OF_SOUND)
     x, y, z = pos
     residuals = []
 
-    # Mikrofon referensi (mic0)
     mic_ref = np.array(mic_positions_list[0])
     dist_ref = np.linalg.norm(np.array([x, y, z]) - mic_ref)
 
-    # Hitung residual untuk setiap mikrofon lainnya
     for i in range(1, len(mic_positions_list)):
         mic_i = np.array(mic_positions_list[i])
         dist_i = np.linalg.norm(np.array([x, y, z]) - mic_i)
-
-        # TDOA terhitung (dalam detik)
         tdoa_calculated = (dist_i - dist_ref) / c
-
-        # TDOA terukur
         tdoa_measured = tdoa_measurements[i - 1]
-
-        # Residual
         residuals.append(tdoa_calculated - tdoa_measured)
 
     return np.array(residuals)
@@ -256,10 +230,8 @@ def solve_tdoa_least_squares(mic_positions, tdoa_data):
     mic_names = sorted(mic_positions.keys())
     n_mics = len(mic_names)
 
-    # Susun posisi mikrofon sebagai list (mic0 sebagai referensi)
     mic_positions_list = [mic_positions[name] for name in mic_names]
 
-    # Ekstrak TDOA measurements relatif ke mic0
     tdoa_measurements = []
     for i in range(1, n_mics):
         mic_pair = f"{mic_names[0]}-{mic_names[i]}"
@@ -270,21 +242,18 @@ def solve_tdoa_least_squares(mic_positions, tdoa_data):
         elif mic_pair_inv in tdoa_data:
             tdoa_measurements.append(-tdoa_data[mic_pair_inv])
         else:
-            return None  # TDOA data tidak lengkap
+            return None
 
-    # Initial guess: centroid dari semua mikrofon
     initial_guess = np.mean(mic_positions_list, axis=0)
 
-    # Optimisasi menggunakan least squares
     try:
         result = least_squares(
             tdoa_residuals,
             initial_guess,
             args=(mic_positions_list, tdoa_measurements, SPEED_OF_SOUND),
-            method="lm",  # Levenberg-Marquardt
+            method="lm",
             max_nfev=1000,
         )
-
         if result.success:
             return tuple(result.x)
         else:
@@ -294,7 +263,7 @@ def solve_tdoa_least_squares(mic_positions, tdoa_data):
 
 
 def process_event_tdoa(event_data, mic_positions, method="bucher-misra"):
-    """Memproses satu event TDOA dan mengembalikan estimasi posisi
+    """Memproses satu event TDOA dan mengembalikan estimasi posisi.
 
     Args:
         event_data: Data event dengan TDOA measurements
@@ -306,15 +275,10 @@ def process_event_tdoa(event_data, mic_positions, method="bucher-misra"):
     """
     tdoa_data = event_data["tdoa"]
 
-    # Metode Least Squares
     if method == "least-squares":
         estimated_pos = solve_tdoa_least_squares(mic_positions, tdoa_data)
         if estimated_pos is not None:
-            return (
-                estimated_pos,
-                1,
-                None,
-            )  # Confidence = 1 untuk least squares, no clusters
+            return (estimated_pos, 1, None)
         else:
             return None, 0, None
 
@@ -322,7 +286,6 @@ def process_event_tdoa(event_data, mic_positions, method="bucher-misra"):
     mic_names = list(mic_positions.keys())
     n_mics = len(mic_names)
 
-    # Validasi jumlah mikrofon
     if n_mics < 4:
         print(f"[ERROR] Minimal 4 mikrofon diperlukan, ditemukan {n_mics}")
         return None, 0, None
@@ -331,15 +294,11 @@ def process_event_tdoa(event_data, mic_positions, method="bucher-misra"):
     successful_attempts = 0
     total_attempts = 0
 
-    # --- LANGKAH 1: BUAT SEMUA KOMBINASI 4 DARI N MIKROFON ---
     mic_combinations = list(combinations(mic_names, 4))
     total_combinations = len(mic_combinations)
     print(f"\n[INFO] Total kombinasi 4 mikrofon dari {n_mics}: {total_combinations}")
 
-    # --- LANGKAH 2: UNTUK SETIAP KOMBINASI, BUAT SEMUA PERMUTASI ---
     for combo_idx, mic_combo in enumerate(mic_combinations, 1):
-        # print(f"[DEBUG] Kombinasi {combo_idx}/{total_combinations}: {mic_combo}")
-
         mic_permutations = list(itertools.permutations(mic_combo))
 
         for perm in mic_permutations:
@@ -353,20 +312,17 @@ def process_event_tdoa(event_data, mic_positions, method="bucher-misra"):
             ]
 
             try:
-                # Ambil TDOA dari data
                 Rij = tdoa_data.get(f"{m_i}-{m_j}", -tdoa_data.get(f"{m_j}-{m_i}", 0))
                 Rik = tdoa_data.get(f"{m_i}-{m_k}", -tdoa_data.get(f"{m_k}-{m_i}", 0))
                 Rkj = tdoa_data.get(f"{m_k}-{m_j}", -tdoa_data.get(f"{m_j}-{m_k}", 0))
                 Rkl = tdoa_data.get(f"{m_k}-{m_l}", -tdoa_data.get(f"{m_l}-{m_k}", 0))
 
-                # Konversi TDOA ke range
                 d_Rij = Rij * SPEED_OF_SOUND
                 d_Rik = Rik * SPEED_OF_SOUND
                 d_Rkj = Rkj * SPEED_OF_SOUND
                 d_Rkl = Rkl * SPEED_OF_SOUND
                 ranges_m = [0.0, -d_Rij, -d_Rik, -d_Rik - d_Rkl]
 
-                # Hitung solusi
                 solutions = bucher_misra_3d(
                     stations_xyz=stations_xyz, ranges_m=ranges_m, c_audio=SPEED_OF_SOUND
                 )
@@ -376,7 +332,6 @@ def process_event_tdoa(event_data, mic_positions, method="bucher-misra"):
             except (KeyError, BucherMisraError, ValueError):
                 continue
 
-    # Statistik
     print(f"[INFO] Total percobaan: {total_attempts}")
     print(f"[INFO] Percobaan berhasil: {successful_attempts}")
     if total_attempts > 0:
@@ -390,69 +345,47 @@ def process_event_tdoa(event_data, mic_positions, method="bucher-misra"):
 
     print(f"[INFO] Total {len(all_solutions)} solusi kandidat ditemukan")
 
-    # --- LANGKAH 3: CLUSTERING ---
-    all_clusters = []
-    assigned_indices = set()
-
-    for i, sol1 in enumerate(all_solutions):
-        if i in assigned_indices:
-            continue
-        current_cluster = [sol1]
-        assigned_indices.add(i)
-        for j, sol2 in enumerate(all_solutions):
-            if j in assigned_indices:
-                continue
-            is_close_to_cluster = any(
-                np.linalg.norm(np.array(sol2) - np.array(member)) < 1.0
-                for member in current_cluster
-            )
-            if is_close_to_cluster:
-                current_cluster.append(sol2)
-                assigned_indices.add(j)
-        all_clusters.append(current_cluster)
+    # Clustering menggunakan helper yang dikonsolidasi
+    all_clusters = _cluster_solutions(all_solutions, eps=1.0)
 
     if not all_clusters:
         print("[ERROR] Tidak ada cluster yang ditemukan")
         return None, 0, None
 
-    # Sort clusters by size (descending)
-    all_clusters.sort(key=len, reverse=True)
-
-    # Debug: tampilkan info semua cluster
     print(f"\n[DEBUG] Ditemukan {len(all_clusters)} cluster:")
     clusters_info = []
     for idx, cluster in enumerate(all_clusters):
         centroid = np.mean(cluster, axis=0)
-        cluster_line = f"Cluster {idx+1}: {len(cluster)} solusi, centroid = [{centroid[0]:.2f}, {centroid[1]:.2f}, {centroid[2]:.2f}]"
+        cluster_line = (
+            f"Cluster {idx+1}: {len(cluster)} solusi, "
+            f"centroid = [{centroid[0]:.2f}, {centroid[1]:.2f}, {centroid[2]:.2f}]"
+        )
         print(f"  {cluster_line}")
         clusters_info.append(cluster_line)
 
-    # --- LANGKAH 4: PILIH CLUSTER TERBESAR ---
-    final_cluster = all_clusters[0]  # Cluster terbesar
+    final_cluster = all_clusters[0]
 
     if not final_cluster:
         return None, 0, None
 
-    # Hitung median dari cluster terpilih
     final_solution = np.median(final_cluster, axis=0)
     print(f"[DEBUG] Cluster terpilih: {len(final_cluster)} solusi")
     print(
-        f"[DEBUG] Posisi akhir: [{final_solution[0]:.2f}, {final_solution[1]:.2f}, {final_solution[2]:.2f}]\n"
+        f"[DEBUG] Posisi akhir: [{final_solution[0]:.2f}, "
+        f"{final_solution[1]:.2f}, {final_solution[2]:.2f}]\n"
     )
 
     return final_solution, len(final_cluster), clusters_info
 
 
 def save_results_to_file(data, events_results, mic_positions, output_file):
-    """Simpan hasil estimasi posisi ke file teks dalam format sederhana"""
+    """Simpan hasil estimasi posisi ke file teks dalam format sederhana."""
     with open(output_file, "w", encoding="utf-8") as f:
-        # Simpan posisi mikrofon di bagian atas file
         f.write("# MICROPHONE POSITIONS\n")
         for mic_name, pos in mic_positions.items():
             f.write(f"{mic_name} = [{pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}]\n")
         f.write("\n# EVENT POSITIONS\n")
 
-        # Simpan hasil estimasi event
         for result in events_results:
             event_num = result["event_number"]
             estimated_pos = result["estimated_position"]
@@ -460,9 +393,9 @@ def save_results_to_file(data, events_results, mic_positions, output_file):
 
             if estimated_pos is not None:
                 f.write(
-                    f"e{event_num} = [{estimated_pos[0]:.2f}, {estimated_pos[1]:.2f}, {estimated_pos[2]:.2f}]\n"
+                    f"e{event_num} = [{estimated_pos[0]:.2f}, "
+                    f"{estimated_pos[1]:.2f}, {estimated_pos[2]:.2f}]\n"
                 )
-
                 if clusters_info:
                     for cluster_line in clusters_info:
                         f.write(f"  {cluster_line}\n")
@@ -475,29 +408,26 @@ def main():
     print("PROGRAM ESTIMASI POSISI DARI FILE JSON TDOA")
     print("=" * 80)
 
-    # Gunakan posisi mikrofon yang sudah didefinisikan
     mic_positions = MIC_POSITIONS
 
     print(f"\nPosisi Mikrofon:")
     for mic_name, pos in mic_positions.items():
         print(f"  {mic_name}: [{pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}]")
 
-    # Cari dan tampilkan file JSON yang tersedia
     json_files = glob.glob("*.json") + glob.glob("received_*.json")
-    json_files = sorted(list(set(json_files)))  # Hapus duplikat dan urutkan
+    json_files = sorted(list(set(json_files)))
 
     if json_files:
         print(f"\n{'='*80}")
         print(f"File JSON yang tersedia ({len(json_files)} file):")
         print(f"{'='*80}")
         for i, file in enumerate(json_files, 1):
-            file_size = os.path.getsize(file) / 1024  # KB
+            file_size = os.path.getsize(file) / 1024
             print(f"  {i}. {file:<50} ({file_size:.2f} KB)")
         print(f"{'='*80}")
     else:
         print("\n[INFO] Tidak ada file JSON ditemukan di direktori ini.")
 
-    # Input file JSON
     json_file = input(
         "\nMasukkan nama file JSON (contoh: received_20251128_155300.json): "
     ).strip()
@@ -512,7 +442,6 @@ def main():
         print(f"Error: File JSON tidak valid - {e}")
         return
 
-    # Proses setiap event
     print("\n" + "=" * 80)
     print(f"HASIL ESTIMASI POSISI")
     print(f"Session ID: {data.get('session_id', 'N/A')}")
@@ -544,7 +473,8 @@ def main():
 
         if estimated_pos is not None:
             print(
-                f"Estimasi Posisi: [{estimated_pos[0]:.2f}, {estimated_pos[1]:.2f}, {estimated_pos[2]:.2f}] m"
+                f"Estimasi Posisi: [{estimated_pos[0]:.2f}, "
+                f"{estimated_pos[1]:.2f}, {estimated_pos[2]:.2f}] m"
             )
             print(f"Cluster Size   : {cluster_size} solusi konsisten")
         else:
@@ -554,7 +484,6 @@ def main():
     print("PROSES SELESAI")
     print("=" * 80)
 
-    # Simpan hasil ke file
     output_file = json_file.replace(".json", "_results.txt")
     save_results_to_file(data, events_results, mic_positions, output_file)
     print(f"\nHasil disimpan ke: {output_file}")

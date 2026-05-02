@@ -1,0 +1,54 @@
+{
+  "session_id": "test_session_20250101_000000_abc123",
+  "timestamp": "2025-01-01 00:00:00",
+  "total_recording_duration": 5.0,
+  "sample_rate": 48000,
+  "event_count": 2,
+  "device_profile": "H8",
+  "format": "S24_3LE",
+  "channels": 12,
+  "num_mics": 6,
+  "num_tdoa_pairs": 15,
+  "events": [
+    {
+      "event_number": 1,
+      "tdoa": {
+        "mic0-mic1": -0.00215,
+        "mic0-mic2": 0.00130,
+        "mic0-mic3": -0.00090,
+        "mic0-mic4": 0.00045,
+        "mic0-mic5": 0.00020,
+        "mic1-mic2": 0.00345,
+        "mic1-mic3": 0.00125,
+        "mic1-mic4": 0.00260,
+        "mic1-mic5": 0.00235,
+        "mic2-mic3": -0.00220,
+        "mic2-mic4": -0.00085,
+        "mic2-mic5": -0.00110,
+        "mic3-mic4": 0.00135,
+        "mic3-mic5": 0.00110,
+        "mic4-mic5": -0.00025
+      }
+    },
+    {
+      "event_number": 2,
+      "tdoa": {
+        "mic0-mic1": 0.00310,
+        "mic0-mic2": -0.00180,
+        "mic0-mic3": 0.00150,
+        "mic0-mic4": -0.00070,
+        "mic0-mic5": -0.00030,
+        "mic1-mic2": -0.00490,
+        "mic1-mic3": -0.00160,
+        "mic1-mic4": -0.00380,
+        "mic1-mic5": -0.00340,
+        "mic2-mic3": 0.00330,
+        "mic2-mic4": 0.00110,
+        "mic2-mic5": 0.00150,
+        "mic3-mic4": -0.00220,
+        "mic3-mic5": -0.00180,
+        "mic4-mic5": 0.00040
+      }
+    }
+  ]
+}

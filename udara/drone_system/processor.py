@@ -113,7 +113,6 @@ class AudioProcessor:
                 if normalize:
                     peak = np.max(np.abs(ch))
                     if peak > 0:
-                        print(peak) # TODO: delete this later
                         ch = ch / peak
                 
                 fname = os.path.join(output_dir, f"mic{i}_original.wav")

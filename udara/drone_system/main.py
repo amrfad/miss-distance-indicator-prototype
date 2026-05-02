@@ -5,6 +5,7 @@ Entry point untuk sistem drone audio detection dengan serial communication
 """
 
 import sys
+import time
 from .controller import DroneAudioSystem
 from .serial_handler import SerialHandler
 from .config import (
@@ -160,7 +161,6 @@ def run_online_mode(audio_system):
                 process_command(command, audio_system, serial_handler)
             
             # Small delay untuk mengurangi CPU usage
-            import time
             time.sleep(MAIN_LOOP_DELAY)
             
     except KeyboardInterrupt:
