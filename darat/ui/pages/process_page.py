@@ -1,0 +1,283 @@
+# darat/ui/pages/process_page.py
+"""Process Page — TDOA JSON processing (port of darat/screens/process_screen.py)."""
+
+import glob
+import json
+import os
+import traceback
+
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
+    QFrame, QLabel, QListWidget, QListWidgetItem,
+    QPushButton, QTextEdit, QFileDialog, QMessageBox,
+)
+from PyQt6.QtCore import pyqtSignal, Qt, QThread, QObject
+from PyQt6.QtGui import QColor
+
+from ...process_json_tdoa import process_event_tdoa, save_results_to_file
+from ...config_manager import get_global_config_manager
+
+
+class _ProcessWorker(QObject):
+    """Background worker for TDOA processing (heavy CPU — never block GUI)."""
+
+    finished = pyqtSignal(str, list)   # (filename, events_results)
+    progress = pyqtSignal(str)         # log line
+    error    = pyqtSignal(str)         # error message
+
+    def __init__(self, filename: str, mic_positions: dict):
+        super().__init__()
+        self._filename = filename
+        self._mic_positions = mic_positions
+
+    def run(self):
+        try:
+            with open(self._filename, "r") as f:
+                data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError) as exc:
+            self.error.emit(str(exc))
+            return
+
+        self.progress.emit(f"Session ID : {data.get('session_id', 'N/A')}")
+        self.progress.emit(f"Timestamp  : {data.get('timestamp', 'N/A')}")
+        self.progress.emit(f"Events     : {data.get('event_count', 0)}")
+        self.progress.emit("=" * 60)
+
+        events = data.get("events", [])
+        results: list[dict] = []
+        for event in events:
+            num = event.get("event_number", "?")
+            self.progress.emit(f"\nEVENT {num}")
+            self.progress.emit("─" * 40)
+
+            pos, cluster_size, clusters_info = process_event_tdoa(event, self._mic_positions)
+            results.append({
+                "event_number":     num,
+                "estimated_position": pos,
+                "cluster_size":     cluster_size,
+                "clusters_info":    clusters_info,
+            })
+
+            if pos is not None:
+                self.progress.emit(
+                    f"Position  : [{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}] m"
+                )
+                self.progress.emit(f"Cluster   : {cluster_size} consistent solutions")
+            else:
+                self.progress.emit("Position  : FAILED (no valid solution)")
+
+        self.progress.emit("\n" + "=" * 60)
+        self.progress.emit("PROCESSING COMPLETE")
+        self.progress.emit("=" * 60)
+        self.finished.emit(self._filename, results)
+
+
+class ProcessPage(QWidget):
+    """Process tab: select a JSON file and run Bucher-Misra TDOA estimation.
+
+    Signals
+    -------
+    log_message(str, str)         — shared log panel
+    results_saved(str)            — path to *_results.txt (for Visualize tab)
+    """
+
+    log_message   = pyqtSignal(str, str)
+    results_saved = pyqtSignal(str)
+
+    def __init__(self, working_dir: str = "", parent=None):
+        super().__init__(parent)
+        self._working_dir = working_dir or os.getcwd()
+        self._thread: QThread | None = None
+        self._build_ui()
+        self._refresh_file_list()
+
+    def set_working_dir(self, path: str):
+        self._working_dir = path
+        self._dir_label.setText(path)
+        self._refresh_file_list()
+
+    def _build_ui(self):
+        root = QVBoxLayout(self)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(10)
+
+        title = QLabel("TDOA JSON PROCESSING")
+        title.setObjectName("sectionTitle")
+        root.addWidget(title)
+
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.setHandleWidth(4)
+        root.addWidget(splitter, stretch=1)
+
+        # LEFT: file selection
+        left = QFrame()
+        left.setObjectName("card")
+        ll = QVBoxLayout(left)
+        ll.setContentsMargins(10, 10, 10, 10)
+        ll.setSpacing(8)
+
+        dir_header = QHBoxLayout()
+        dir_header.addWidget(QLabel("Directory:"))
+        self._dir_label = QLabel(self._working_dir)
+        self._dir_label.setObjectName("statusValue")
+        self._dir_label.setWordWrap(True)
+        dir_header.addWidget(self._dir_label, stretch=1)
+        ll.addLayout(dir_header)
+
+        self._file_list = QListWidget()
+        self._file_list.setAlternatingRowColors(True)
+        ll.addWidget(self._file_list, stretch=1)
+
+        self._file_count = QLabel("No JSON files found")
+        self._file_count.setObjectName("statusHeading")
+        ll.addWidget(self._file_count)
+
+        btn_row = QHBoxLayout()
+        self._process_btn = QPushButton("▶  PROCESS SELECTED")
+        self._process_btn.setObjectName("btnPrimary")
+        self._process_btn.clicked.connect(self._process_selected)
+        btn_row.addWidget(self._process_btn)
+
+        change_btn = QPushButton("📁  CHANGE DIR")
+        change_btn.clicked.connect(self._change_directory)
+        btn_row.addWidget(change_btn)
+
+        refresh_btn = QPushButton("↻")
+        refresh_btn.setFixedWidth(34)
+        refresh_btn.clicked.connect(self._refresh_file_list)
+        btn_row.addWidget(refresh_btn)
+        ll.addLayout(btn_row)
+
+        splitter.addWidget(left)
+
+        # RIGHT: log output
+        right = QFrame()
+        right.setObjectName("card")
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(10, 10, 10, 10)
+        rl.setSpacing(6)
+
+        header_row = QHBoxLayout()
+        log_title = QLabel("PROCESSING LOG")
+        log_title.setObjectName("sectionTitle")
+        header_row.addWidget(log_title)
+        header_row.addStretch()
+        clr_btn = QPushButton("CLEAR")
+        clr_btn.setFixedSize(56, 24)
+        clr_btn.clicked.connect(self._clear_log)
+        header_row.addWidget(clr_btn)
+        rl.addLayout(header_row)
+
+        self._log_area = QTextEdit()
+        self._log_area.setObjectName("logConsole")
+        self._log_area.setReadOnly(True)
+        rl.addWidget(self._log_area, stretch=1)
+
+        self._view_viz_btn = QPushButton("📊  OPEN IN VISUALIZE")
+        self._view_viz_btn.setObjectName("btnSave")
+        self._view_viz_btn.setVisible(False)
+        self._view_viz_btn.clicked.connect(self._open_in_visualize)
+        rl.addWidget(self._view_viz_btn)
+
+        splitter.addWidget(right)
+        splitter.setSizes([300, 600])
+
+    # ── Helpers ──────────────────────────────────────────────────────────
+
+    def _refresh_file_list(self):
+        self._file_list.clear()
+        files = sorted(glob.glob(os.path.join(self._working_dir, "*.json")))
+        for path in files:
+            size_kb = os.path.getsize(path) / 1024
+            item = QListWidgetItem(f"{os.path.basename(path)}  ({size_kb:.1f} KB)")
+            item.setData(Qt.ItemDataRole.UserRole, path)
+            self._file_list.addItem(item)
+        count = len(files)
+        self._file_count.setText(
+            f"{count} JSON file{'s' if count != 1 else ''} found"
+        )
+
+    def _get_selected_path(self) -> str | None:
+        items = self._file_list.selectedItems()
+        if not items:
+            return None
+        return items[0].data(Qt.ItemDataRole.UserRole)
+
+    def _append_log(self, text: str):
+        self._log_area.append(text)
+        sb = self._log_area.verticalScrollBar()
+        sb.setValue(sb.maximum())
+
+    def _clear_log(self):
+        self._log_area.clear()
+        self._view_viz_btn.setVisible(False)
+
+    # ── Slots ─────────────────────────────────────────────────────────────
+
+    def _process_selected(self):
+        path = self._get_selected_path()
+        if not path:
+            QMessageBox.information(self, "No Selection", "Please select a JSON file first.")
+            return
+
+        cfg = get_global_config_manager().get_config()
+        mic_positions = cfg.get("mic_positions", {})
+        
+        self._clear_log()
+        self._process_btn.setEnabled(False)
+        self.log_message.emit(f"Processing: {os.path.basename(path)}", "INFO")
+        self._append_log(f"Processing: {path}")
+        self._append_log("=" * 60)
+        self._append_log("Microphone Positions:")
+        for name, pos_dict in mic_positions.items():
+            self._append_log(f"  {name}: [{pos_dict['x']:.3f}, {pos_dict['y']:.3f}, {pos_dict['z']:.3f}] m")
+        self._append_log("")
+
+        self._current_file = path
+        self._thread = QThread(self)
+        self._worker = _ProcessWorker(path, mic_positions)
+        self._worker.moveToThread(self._thread)
+
+        self._thread.started.connect(self._worker.run)
+        self._worker.progress.connect(self._append_log)
+        self._worker.error.connect(self._on_process_error)
+        self._worker.finished.connect(self._on_process_done)
+        self._worker.finished.connect(self._thread.quit)
+        self._thread.finished.connect(self._thread.deleteLater)
+        self._thread.start()
+
+    def _on_process_error(self, msg: str):
+        self._append_log(f"ERROR: {msg}")
+        self.log_message.emit(f"Process error: {msg}", "ERROR")
+        self._process_btn.setEnabled(True)
+
+    def _on_process_done(self, filename: str, results: list):
+        self._process_btn.setEnabled(True)
+        try:
+            cfg = get_global_config_manager().get_config()
+            mic_positions = cfg.get("mic_positions", {})
+            
+            with open(filename) as f:
+                data = json.load(f)
+            out_file = filename.replace(".json", "_results.txt")
+            save_results_to_file(data, results, mic_positions, out_file)
+            self._append_log(f"\nResults saved → {out_file}")
+            self.log_message.emit(f"Results saved: {os.path.basename(out_file)}", "INFO")
+            self._last_results_file = out_file
+            self._view_viz_btn.setVisible(True)
+            self.results_saved.emit(out_file)
+        except Exception as exc:
+            self._append_log(f"ERROR saving results: {exc}")
+            self.log_message.emit(f"Results save error: {exc}", "ERROR")
+
+    def _change_directory(self):
+        d = QFileDialog.getExistingDirectory(
+            self, "Choose directory containing JSON files", self._working_dir
+        )
+        if d:
+            self.set_working_dir(d)
+            self.log_message.emit(f"Working directory: {d}", "INFO")
+
+    def _open_in_visualize(self):
+        # Emitted to dashboard which switches tab and selects the file
+        self.results_saved.emit(getattr(self, "_last_results_file", ""))

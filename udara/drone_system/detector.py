@@ -7,29 +7,13 @@ import os
 import glob
 import numpy as np
 import librosa
-from .config import (
-    MIN_DURATION,
-    MAX_GAP,
-    DETECT_RATIO,
-    FILTER_RATIO,
-    IGNORE_TIME,
-    HOP_LENGTH,
-    FRAME_LENGTH,
-    NORMALIZATION_PERCENTILE
-)
+from .config_manager import get_global_config_manager
 
 
 class EventDetector:
     """Deteksi event menggunakan consensus dari multiple microphones"""
     
-    def __init__(self, 
-                 min_duration=MIN_DURATION, 
-                 max_gap=MAX_GAP, 
-                 detect_ratio=DETECT_RATIO, 
-                 filter_ratio=FILTER_RATIO,
-                 ignore_time=IGNORE_TIME,
-                 hop_length=HOP_LENGTH,
-                 frame_length=FRAME_LENGTH):
+    def __init__(self):
         """
         Initialize event detector
         
@@ -42,13 +26,16 @@ class EventDetector:
             hop_length (int): Hop length untuk RMS calculation
             frame_length (int): Frame length untuk RMS calculation
         """
-        self.min_duration = min_duration
-        self.max_gap = max_gap
-        self.detect_ratio = detect_ratio
-        self.filter_ratio = filter_ratio
-        self.ignore_time = ignore_time
-        self.hop_length = hop_length
-        self.frame_length = frame_length
+        cfg = get_global_config_manager().get_config()
+        self.min_duration = cfg.get("min_duration", 0.25)
+        self.max_gap = cfg.get("max_gap", 0.1)
+        self.detect_ratio = cfg.get("detect_ratio", 0.20)
+        self.filter_ratio = cfg.get("filter_ratio", 0.40)
+        self.ignore_time = cfg.get("ignore_time", 0.5)
+        # Hop dan frame length tidak ada di runtime config UI, gunakan nilai hardcoded default
+        self.hop_length = 512
+        self.frame_length = 1024
+        self.normalization_percentile = 99.9
         
     def detect_events(self, folder_path, file_pattern="*_filtered.wav"):
         """
@@ -137,7 +124,7 @@ class EventDetector:
                 )[0]
                 
                 # Normalisasi per-channel untuk mencegah bias dari mic yang lebih keras
-                peak_val = np.percentile(rms, NORMALIZATION_PERCENTILE)
+                peak_val = np.percentile(rms, self.normalization_percentile)
                 if peak_val > 0:
                     rms_norm = rms / peak_val
                 else:

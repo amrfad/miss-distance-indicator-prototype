@@ -9,32 +9,30 @@ import time
 from .controller import DroneAudioSystem
 from .serial_handler import SerialHandler
 from .config import (
-    SERIAL_PORT,
-    BAUD_RATE,
-    MAIN_LOOP_DELAY,
-    SAMPLE_RATE,
-    BASE_OUTPUT_DIR,
-    OPERATION_MODE
+    MAIN_LOOP_DELAY
 )
 from .processor import NOISEREDUCE_AVAILABLE
-from .config_manager import ConfigManager, ConfigError
+from .config_manager import ConfigManager, ConfigError, get_global_config_manager
 from .config_api import start_api_thread
 
 
 def print_header():
     """Print header aplikasi"""
+    cfg = get_global_config_manager().get_config()
+    op_mode = cfg.get("operation_mode", "OFFLINE")
+    
     print("="*60)
     print("DRONE AUDIO DETECTION SYSTEM")
     print("="*60)
-    print(f"Operation Mode: {OPERATION_MODE}")
-    if OPERATION_MODE == "ONLINE":
-        print(f"Serial Port: {SERIAL_PORT}")
-        print(f"Baud Rate: {BAUD_RATE}")
-    print(f"Sample Rate: {SAMPLE_RATE} Hz")
+    print(f"Operation Mode: {op_mode}")
+    if op_mode == "ONLINE":
+        print(f"Serial Port: {cfg.get('serial_port')}")
+        print(f"Baud Rate: {cfg.get('baud_rate')}")
+    print(f"Sample Rate: {cfg.get('sample_rate')} Hz")
     print(f"Filtering: {'Enabled' if NOISEREDUCE_AVAILABLE else 'Disabled'}")
-    print(f"Output Dir: {BASE_OUTPUT_DIR}")
+    print(f"Output Dir: {cfg.get('base_output_dir')}")
     print("="*60)
-    if OPERATION_MODE == "ONLINE":
+    if op_mode == "ONLINE":
         print("\nWaiting for commands from ground station...")
         print("Commands: START_REC | STOP_REC | STATUS")
     else:
@@ -209,9 +207,8 @@ def main():
     """Main loop aplikasi"""
     print_header()
 
-    # Initialize ConfigManager (load overrides dari disk jika ada)
-    config_manager = ConfigManager()
-    config_manager.apply_to_module()
+    # Initialize ConfigManager
+    config_manager = get_global_config_manager()
 
     # Initialize audio system (setelah config ter-apply)
     audio_system = DroneAudioSystem()
@@ -233,13 +230,18 @@ def main():
 
 def run_online_mode(audio_system, config_manager=None):
     """Run dalam ONLINE mode dengan serial communication"""
-    serial_handler = SerialHandler()
+    cfg = config_manager.get_config()
+    serial_port = cfg.get("serial_port", "/dev/ttyUSB0")
+    baud_rate = cfg.get("baud_rate", 230400)
+    timeout = cfg.get("serial_timeout", 5)
+
+    serial_handler = SerialHandler(port=serial_port, baud_rate=baud_rate, timeout=timeout)
     
     # Connect to serial
     if not serial_handler.connect():
         print("[FATAL] Tidak dapat membuka serial port")
         print("Pastikan:")
-        print(f"  1. Device {SERIAL_PORT} ada")
+        print(f"  1. Device {serial_port} ada")
         print("  2. Permission sudah benar (sudo usermod -a -G dialout $USER)")
         print("  3. Tidak ada program lain yang menggunakan port tersebut")
         return 1

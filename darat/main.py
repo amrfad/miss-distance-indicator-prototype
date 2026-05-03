@@ -1,24 +1,41 @@
 """
-Ground Unit — Entry Point
-
-Cara menjalankan (dari direktori manapun):
-    python refactored/darat/main.py
-
-Atau dari dalam direktori refactored/darat/:
-    python main.py
+Miss Distance Indicator — Ground Control Station
+Entry point: python -m darat.main  (or  python darat/main.py)
 """
 
 import sys
 import os
 
-# Tambahkan direktori 'refactored/' ke sys.path agar 'darat' bisa di-import sebagai package.
-# Ini diperlukan karena app.py dan modul lain menggunakan relative imports (from .config import ...).
-_this_dir = os.path.dirname(os.path.abspath(__file__))          # .../refactored/darat
-_refactored_dir = os.path.dirname(_this_dir)                    # .../refactored
-if _refactored_dir not in sys.path:
-    sys.path.insert(0, _refactored_dir)
+# Ensure project root is on path when run as script
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from darat.app import main  # noqa: E402 (import setelah sys.path setup)
+
+def main():
+    from PyQt6.QtWidgets import QApplication
+    from PyQt6.QtGui import QFont
+    from darat.ui.dashboard import MainDashboard
+
+    app = QApplication(sys.argv)
+    app.setApplicationName("Miss Distance Indicator")
+    app.setOrganizationName("MDI")
+
+    # Load stylesheet
+    qss_path = os.path.join(
+        os.path.dirname(__file__), "ui", "styles", "mdi_theme.qss"
+    )
+    if os.path.exists(qss_path):
+        with open(qss_path, "r", encoding="utf-8") as f:
+            app.setStyleSheet(f.read())
+
+    # Default font
+    font = QFont("JetBrains Mono", 10)
+    font.setStyleHint(QFont.StyleHint.Monospace)
+    app.setFont(font)
+
+    window = MainDashboard()
+    window.show()
+    sys.exit(app.exec())
+
 
 if __name__ == "__main__":
     main()

@@ -19,18 +19,7 @@ import glob
 from typing import Iterable, List, Optional, Sequence, Tuple
 from scipy.optimize import least_squares
 
-# --- Konfigurasi ---
-SPEED_OF_SOUND = 343.0  # m/s
-
-# Posisi mikrofon dalam meter (x, y, z)
-MIC_POSITIONS = {
-    "mic0": np.array([-1.58, 0.77, 0.09]),
-    "mic1": np.array([1.60, 0.77, 0.09]),
-    "mic2": np.array([-0.59, -0.92, -0.07]),
-    "mic3": np.array([0.59, -0.92, -0.05]),
-    "mic4": np.array([-0.5, -0.11, -0.16]),
-    "mic5": np.array([0.13, -0.01, -0.17]),
-}
+from .config_manager import get_global_config_manager
 
 
 class BucherMisraError(ValueError):
@@ -187,7 +176,7 @@ def _cluster_solutions(solutions, eps=1.0):
     return all_clusters
 
 
-def tdoa_residuals(pos, mic_positions_list, tdoa_measurements, c=SPEED_OF_SOUND):
+def tdoa_residuals(pos, mic_positions_list, tdoa_measurements, c=None):
     """
     Fungsi residual untuk least squares optimization.
 
@@ -200,6 +189,8 @@ def tdoa_residuals(pos, mic_positions_list, tdoa_measurements, c=SPEED_OF_SOUND)
     Returns:
         Array residual (selisih antara TDOA terukur dan terhitung)
     """
+    if c is None:
+        c = get_global_config_manager().get_config().get("speed_of_sound", 343.0)
     x, y, z = pos
     residuals = []
 
@@ -250,7 +241,7 @@ def solve_tdoa_least_squares(mic_positions, tdoa_data):
         result = least_squares(
             tdoa_residuals,
             initial_guess,
-            args=(mic_positions_list, tdoa_measurements, SPEED_OF_SOUND),
+            args=(mic_positions_list, tdoa_measurements, get_global_config_manager().get_config().get("speed_of_sound", 343.0)),
             method="lm",
             max_nfev=1000,
         )
@@ -273,6 +264,10 @@ def process_event_tdoa(event_data, mic_positions, method="bucher-misra"):
     Returns:
         (estimated_position, cluster_size/confidence, clusters_info)
     """
+    cfg = get_global_config_manager().get_config()
+    speed_of_sound = cfg.get("speed_of_sound", 343.0)
+    cluster_eps = cfg.get("cluster_eps", 1.0)
+    
     tdoa_data = event_data["tdoa"]
 
     if method == "least-squares":
@@ -317,14 +312,14 @@ def process_event_tdoa(event_data, mic_positions, method="bucher-misra"):
                 Rkj = tdoa_data.get(f"{m_k}-{m_j}", -tdoa_data.get(f"{m_j}-{m_k}", 0))
                 Rkl = tdoa_data.get(f"{m_k}-{m_l}", -tdoa_data.get(f"{m_l}-{m_k}", 0))
 
-                d_Rij = Rij * SPEED_OF_SOUND
-                d_Rik = Rik * SPEED_OF_SOUND
-                d_Rkj = Rkj * SPEED_OF_SOUND
-                d_Rkl = Rkl * SPEED_OF_SOUND
+                d_Rij = Rij * speed_of_sound
+                d_Rik = Rik * speed_of_sound
+                d_Rkj = Rkj * speed_of_sound
+                d_Rkl = Rkl * speed_of_sound
                 ranges_m = [0.0, -d_Rij, -d_Rik, -d_Rik - d_Rkl]
 
                 solutions = bucher_misra_3d(
-                    stations_xyz=stations_xyz, ranges_m=ranges_m, c_audio=SPEED_OF_SOUND
+                    stations_xyz=stations_xyz, ranges_m=ranges_m, c_audio=speed_of_sound
                 )
                 all_solutions.extend(solutions)
                 successful_attempts += 1
@@ -346,7 +341,7 @@ def process_event_tdoa(event_data, mic_positions, method="bucher-misra"):
     print(f"[INFO] Total {len(all_solutions)} solusi kandidat ditemukan")
 
     # Clustering menggunakan helper yang dikonsolidasi
-    all_clusters = _cluster_solutions(all_solutions, eps=1.0)
+    all_clusters = _cluster_solutions(all_solutions, eps=cluster_eps)
 
     if not all_clusters:
         print("[ERROR] Tidak ada cluster yang ditemukan")
@@ -408,7 +403,8 @@ def main():
     print("PROGRAM ESTIMASI POSISI DARI FILE JSON TDOA")
     print("=" * 80)
 
-    mic_positions = MIC_POSITIONS
+    cfg = get_global_config_manager().get_config()
+    mic_positions = cfg.get("mic_positions", {})
 
     print(f"\nPosisi Mikrofon:")
     for mic_name, pos in mic_positions.items():

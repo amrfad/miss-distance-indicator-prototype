@@ -11,7 +11,8 @@ pyserial==3.5
 python-dateutil==2.9.0.post0
 scipy==1.15.3
 six==1.17.0
-tk==0.1.0
+PyQt6>=6.6.0
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
+requests>=2.31.0
 pytest==9.0.3

@@ -1,7 +1,7 @@
 import numpy as np
 import itertools
 from scipy.signal import correlate
-from .config import IS_GCC_PHAT
+from .config_manager import get_global_config_manager
 
 def calculate_tdoa_gcc_phat(sig1, sig2, fs):
     """
@@ -95,7 +95,8 @@ def calculate_all_tdoa(data, fs, channel_indices=None):
         if np.max(np.abs(sig1)) < 1e-6 or np.max(np.abs(sig2)) < 1e-6:
             tdoa = 0.0
         else:
-            if IS_GCC_PHAT:
+            is_gcc_phat = get_global_config_manager().get_config().get("is_gcc_phat", True)
+            if is_gcc_phat:
                 tdoa = calculate_tdoa_gcc_phat(sig1, sig2, fs)
             else:
                 tdoa = calculate_cross_correlation(sig1, sig2, fs)

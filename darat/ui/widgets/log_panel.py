@@ -1,7 +1,7 @@
-# UI/widgets/log_panel.py
+# darat/ui/widgets/log_panel.py
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
-    QTextEdit, QPushButton, QLabel
+    QTextEdit, QPushButton, QLabel, QFrame,
 )
 from PyQt6.QtCore import QDateTime, Qt
 
@@ -17,14 +17,14 @@ class LogPanel(QWidget):
     """
 
     _COLORS = {
-        "INFO":    "#16a34a",   # green  (matches statusOk)
-        "WARNING": "#d97706",   # amber  (matches statusWarn)
-        "ERROR":   "#dc2626",   # red    (matches statusError)
-        "DEBUG":   "#2563eb",   # blue   (matches statusValue)
+        "INFO":    "#16a34a",
+        "WARNING": "#d97706",
+        "ERROR":   "#dc2626",
+        "DEBUG":   "#2563eb",
     }
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent=None):
+        super().__init__(parent)
         self._build_ui()
 
     def _build_ui(self):
@@ -32,7 +32,6 @@ class LogPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
-        # Header
         header = QHBoxLayout()
         title = QLabel("SYSTEM LOG")
         title.setObjectName("sectionTitle")
@@ -43,18 +42,14 @@ class LogPanel(QWidget):
         self._clear_btn.setFixedSize(56, 24)
         self._clear_btn.clicked.connect(self.clear)
         header.addWidget(self._clear_btn)
-
         layout.addLayout(header)
 
-        # Console
         self._console = QTextEdit()
         self._console.setObjectName("logConsole")
         self._console.setReadOnly(True)
         layout.addWidget(self._console)
 
-    # ──────────────────────────────────────────────────────────
-    # PUBLIC API
-    # ──────────────────────────────────────────────────────────
+    # ── Public API ──────────────────────────────────────────────────────
 
     def log(self, message: str, level: str = "INFO"):
         ts = QDateTime.currentDateTime().toString("hh:mm:ss")

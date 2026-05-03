@@ -10,6 +10,9 @@ ConfigStore dan pass ke GroundConfigManager(store=MyStore()).
 
 import json
 import threading
+import copy
+import logging
+import os
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Optional
@@ -125,11 +128,40 @@ _PARAM_SCHEMA = [
         "unit": "s",
     },
     {
-        "key": "linux_serial_port",
-        "label": "Serial Port (Linux)",
-        "description": "Device path serial port di Linux",
+        "key": "serial_port",
+        "label": "Serial Port",
+        "description": "Device path/COM port (e.g., COM3, /dev/ttyUSB0)",
         "type": "string",
-        "default": "/dev/ttyUSB0",
+        "default": "COM3",
+        "requires_restart": False,
+        "unit": None,
+    },
+    {
+        "key": "use_tcp",
+        "label": "Use TCP",
+        "description": "Gunakan koneksi TCP alih-alih Serial",
+        "type": "boolean",
+        "default": False,
+        "requires_restart": False,
+        "unit": None,
+    },
+    {
+        "key": "raspi_ip",
+        "label": "Raspberry Pi IP",
+        "description": "IP Address Drone",
+        "type": "string",
+        "default": "192.168.1.100",
+        "requires_restart": False,
+        "unit": None,
+    },
+    {
+        "key": "tcp_port",
+        "label": "TCP Port",
+        "description": "Port TCP",
+        "type": "integer",
+        "default": 5000,
+        "min": 1024,
+        "max": 65535,
         "requires_restart": False,
         "unit": None,
     },
@@ -165,6 +197,29 @@ _PARAM_SCHEMA = [
         "default": [".mp4", ".wav", ".txt", ".json"],
         "requires_restart": False,
         "unit": None,
+    },
+    {
+        "key": "update_interval_s",
+        "label": "Update Interval",
+        "description": "Interval refresh plot 3D",
+        "type": "number",
+        "default": 0.1,
+        "min": 0.03,
+        "max": 2.0,
+        "step": 0.01,
+        "requires_restart": False,
+        "unit": "s",
+    },
+    {
+        "key": "plot_buffer_size",
+        "label": "Plot Buffer Size",
+        "description": "Kapasitas buffer visualisasi data 2D/3D",
+        "type": "integer",
+        "default": 1000,
+        "min": 100,
+        "max": 20000,
+        "requires_restart": False,
+        "unit": "points",
     },
     {
         "key": "mic_positions",
@@ -252,6 +307,10 @@ class GroundConfigManager:
         if overrides:
             print(f"[CONFIG GROUND] Loaded {len(overrides)} override(s) from store")
             self._merge_overrides(overrides)
+
+    def get_config(self) -> dict:
+        """Alias for get_all() to maintain consistency across codebase."""
+        return self.get_all()
 
     # ── Public API ────────────────────────────────────────────────────
 
@@ -352,37 +411,6 @@ class GroundConfigManager:
         """Return schema metadata untuk rendering form UI."""
         return {"params": list(_PARAM_SCHEMA)}
 
-    def apply_to_module(self) -> None:
-        """
-        Sync nilai in-memory ke module-level variables di darat/config.py
-        dan darat/process_json_tdoa.py.
-
-        Dipanggil setelah update agar kode existing langsung menggunakan
-        nilai terbaru (hanya berlaku untuk referensi via modul object,
-        bukan local copies dari 'from .config import X').
-        """
-        try:
-            from . import config as cfg_module
-            with self._lock:
-                cfg_module.BAUD_RATE = self._config["baud_rate"]
-                cfg_module.SERIAL_TIMEOUT = self._config["serial_timeout"]
-                cfg_module.LINUX_SERIAL_PORT = self._config["linux_serial_port"]
-                cfg_module.SPEED_OF_SOUND = self._config["speed_of_sound"]
-                cfg_module.CLUSTER_EPS = self._config["cluster_eps"]
-                cfg_module.SUPPORTED_EXTENSIONS = list(self._config["supported_extensions"])
-                cfg_module.MIC_POSITIONS = dict(self._config["mic_positions"])
-        except ImportError:
-            pass
-
-        # Update SPEED_OF_SOUND dan MIC_POSITIONS di process_json_tdoa.py juga
-        try:
-            from . import process_json_tdoa as tdoa_module
-            with self._lock:
-                tdoa_module.SPEED_OF_SOUND = self._config["speed_of_sound"]
-                tdoa_module.MIC_POSITIONS = dict(self._config["mic_positions"])
-        except ImportError:
-            pass
-
     # ── Internal helpers ──────────────────────────────────────────────
 
     @staticmethod
@@ -463,3 +491,22 @@ class GroundConfigManager:
                     f"Koordinat '{mic_name}.{axis}' harus berupa angka",
                     "mic_positions",
                 )
+
+# ── Singleton Pattern ──────────────────────────────────────────────
+
+_GLOBAL_MANAGER = None
+_GLOBAL_LOCK = threading.Lock()
+
+def get_global_config_manager() -> GroundConfigManager:
+    """Mendapatkan singleton instance dari GroundConfigManager."""
+    global _GLOBAL_MANAGER
+    with _GLOBAL_LOCK:
+        if _GLOBAL_MANAGER is None:
+            # Setup default path di darat/config/ground_config_override.json
+            import os
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            config_dir = os.path.join(base_dir, "config")
+            os.makedirs(config_dir, exist_ok=True)
+            store = JsonFileStore(os.path.join(config_dir, "ground_config_override.json"))
+            _GLOBAL_MANAGER = GroundConfigManager(store=store)
+    return _GLOBAL_MANAGER

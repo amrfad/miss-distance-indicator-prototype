@@ -14,8 +14,8 @@ Untuk mengganti backend:
 
 import json
 import threading
+import copy
 from abc import ABC, abstractmethod
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
@@ -403,6 +403,10 @@ class ConfigManager:
                 {k: v for k, v in overrides.items() if k in _ALL_KEYS}
             )
 
+    def get_config(self) -> dict:
+        """Alias for get_all() to maintain consistency across codebase."""
+        return self.get_all()
+
     # ── Public API ────────────────────────────────────────────────────
 
     def get_all(self) -> dict:
@@ -505,25 +509,6 @@ class ConfigManager:
         """Return schema metadata lengkap untuk rendering form UI."""
         return {"params": list(_PARAM_SCHEMA)}
 
-    def apply_to_module(self) -> None:
-        """
-        Sync nilai in-memory ke module-level variables di drone_system/config.py.
-        Dipanggil setelah update agar kode existing (controller, dll) membaca
-        nilai terbaru dari modul config.
-
-        Catatan: Hanya bekerja untuk kode yang membaca via 'import drone_system.config as cfg;
-        cfg.VARIABLE' (referensi modul), bukan 'from .config import VARIABLE' (local copy).
-        Runtime objects (detector, processor) harus di-update via apply_to_runtime_objects().
-        """
-        try:
-            from . import config as cfg_module
-            with self._lock:
-                for key, var_name in _KEY_TO_CONFIG_VAR.items():
-                    if hasattr(cfg_module, var_name):
-                        setattr(cfg_module, var_name, self._config[key])
-        except ImportError:
-            pass
-
     def apply_to_runtime_objects(self, detector=None, processor=None) -> None:
         """
         Update runtime objects (EventDetector, AudioProcessor) dengan
@@ -588,3 +573,22 @@ class ConfigManager:
                     )
             except (KeyError, TypeError, ZeroDivisionError):
                 pass  # Skip rule jika key tidak ada (partial update)
+
+# ── Singleton Pattern ──────────────────────────────────────────────
+
+_GLOBAL_MANAGER = None
+_GLOBAL_LOCK = threading.Lock()
+
+def get_global_config_manager() -> ConfigManager:
+    """Mendapatkan singleton instance dari ConfigManager drone."""
+    global _GLOBAL_MANAGER
+    with _GLOBAL_LOCK:
+        if _GLOBAL_MANAGER is None:
+            # Setup default path
+            import os
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            config_dir = os.path.join(base_dir, "config")
+            os.makedirs(config_dir, exist_ok=True)
+            store = JsonFileStore(os.path.join(config_dir, "drone_config_override.json"))
+            _GLOBAL_MANAGER = ConfigManager(store=store)
+    return _GLOBAL_MANAGER

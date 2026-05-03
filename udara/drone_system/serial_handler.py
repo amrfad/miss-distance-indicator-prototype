@@ -5,13 +5,10 @@ Mengelola komunikasi serial dengan ground station
 
 import time
 import serial
-from .config import SERIAL_PORT, BAUD_RATE, SERIAL_TIMEOUT
-
-
 class SerialHandler:
     """Mengelola komunikasi serial dengan ground station"""
     
-    def __init__(self, port=SERIAL_PORT, baudrate=BAUD_RATE, timeout=SERIAL_TIMEOUT):
+    def __init__(self, port="/dev/ttyUSB0", baudrate=230400, timeout=5):
         """
         Initialize serial handler
         

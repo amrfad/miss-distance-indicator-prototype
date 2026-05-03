@@ -14,18 +14,13 @@ from .logger import DataLogger
 from .tdoa import calculate_all_tdoa
 from .comms import SerialCommunicator
 from .config import (
-    BASE_OUTPUT_DIR,
-    EVENTS_CSV,
-    EVENTS_JSON,
-    TDOA_JSON,
     EVENT_PADDING_SEC,
     TIMESTAMP_FORMAT,
     LOG_TIMESTAMP_FORMAT,
     POST_RECORDING_DELAY,
-    SAMPLE_RATE,
-    OPERATION_MODE,
     DEVICE_PROFILES
 )
+from .config_manager import get_global_config_manager
 
 
 class DroneAudioSystem:
@@ -48,7 +43,8 @@ class DroneAudioSystem:
         self.recording_start_time = None
         
         # Buat base output directory jika belum ada
-        os.makedirs(BASE_OUTPUT_DIR, exist_ok=True)
+        self.base_output_dir = get_global_config_manager().get_config().get("base_output_dir", "drone_recordings")
+        os.makedirs(self.base_output_dir, exist_ok=True)
         
         print(f"[SYSTEM] DroneAudioSystem initialized (format: {output_format})")
         
@@ -68,7 +64,7 @@ class DroneAudioSystem:
         timestamp = datetime.now().strftime(TIMESTAMP_FORMAT)
         uid = uuid.uuid4().hex[:6]
         session_id = f"session_{timestamp}_{uid}"
-        self.current_session_dir = os.path.join(BASE_OUTPUT_DIR, session_id)
+        self.current_session_dir = os.path.join(self.base_output_dir, session_id)
         os.makedirs(self.current_session_dir, exist_ok=True)
         
         # Path untuk raw recording
@@ -111,11 +107,14 @@ class DroneAudioSystem:
             active_indices = self.recorder.get_active_take_indices()
             print(f"[SYSTEM] Using channel indices: {active_indices}")
 
+            cfg = get_global_config_manager().get_config()
+            sample_rate = cfg.get("sample_rate", 48000)
+
             # 1. Extract channels
             original_files, data, sr, duration = self.processor.extract_channels(
                 self.current_wav_path, 
                 self.current_session_dir,
-                sr_override=SAMPLE_RATE,
+                sr_override=sample_rate,
                 channel_indices=active_indices
             )
             
@@ -166,10 +165,14 @@ class DroneAudioSystem:
                 })
 
             # 6. Save results to JSON
+            cfg = get_global_config_manager().get_config()
+            events_json_filename = cfg.get("events_json", "session_events.json")
+            tdoa_json_filename = cfg.get("tdoa_json", "session_tdoa.json")
+
             session_id = os.path.basename(self.current_session_dir)
             timestamp = datetime.now().strftime(LOG_TIMESTAMP_FORMAT)
-            json_path = os.path.join(self.current_session_dir, EVENTS_JSON)
-            tdoa_json_path = os.path.join(self.current_session_dir, TDOA_JSON)
+            json_path = os.path.join(self.current_session_dir, events_json_filename)
+            tdoa_json_path = os.path.join(self.current_session_dir, tdoa_json_filename)
             
             # Collect extra info from recorder
             rec_status = self.recorder.get_status()
@@ -218,7 +221,7 @@ class DroneAudioSystem:
             print(f"TDOA saved to: {tdoa_json_path}")
             
             # 7. Send TDOA JSON to Ground (hanya jika ONLINE mode)
-            if OPERATION_MODE == "ONLINE":
+            if cfg.get("operation_mode", "OFFLINE") == "ONLINE":
                 print("[SYSTEM] Sending TDOA results to ground...")
                 if self.comms.send_file(tdoa_json_path):
                     print("[SYSTEM] TDOA results sent successfully.")
@@ -268,10 +271,11 @@ class DroneAudioSystem:
         Returns:
             dict: Dictionary berisi informasi sistem
         """
+        cfg = get_global_config_manager().get_config()
         return {
             "recorder": self.recorder.get_status(),
             "processor_features": self.processor.get_available_features(),
-            "output_directory": BASE_OUTPUT_DIR,
-            "events_json_filename": EVENTS_JSON,
+            "output_directory": cfg.get("base_output_dir", "drone_recordings"),
+            "events_json_filename": cfg.get("events_json", "session_events.json"),
             "current_session": self.current_session_dir
         }

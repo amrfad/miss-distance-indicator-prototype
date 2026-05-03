@@ -105,7 +105,6 @@ def create_app(config_manager: GroundConfigManager) -> FastAPI:
         except ConfigError as e:
             return _err(e.code, e.message, e.field)
 
-        config_manager.apply_to_module()
         return _ok(result)
 
     # ── GET /config/ground/schema ─────────────────────────────────────
@@ -134,7 +133,6 @@ def create_app(config_manager: GroundConfigManager) -> FastAPI:
         except ConfigError as e:
             return _err(e.code, e.message, e.field)
 
-        config_manager.apply_to_module()
         return _ok(result)
 
     return app

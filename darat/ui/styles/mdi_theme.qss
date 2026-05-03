@@ -1,20 +1,20 @@
 /* ============================================================
    MDI — Miss Distance Indicator
-   Theme: mdi_theme_light.qss  |  High Contrast / Outdoor Ready
+   Theme: mdi_theme.qss  |  High Contrast / Outdoor Ready
    ============================================================ */
 
 /* ─── GLOBAL ─────────────────────────────────────────────── */
 
 * {
     font-family: "JetBrains Mono", "Consolas", "Courier New", monospace;
-    font-size: 15px;
+    font-size: 13px;
     color: #1f2d3d;
     background-color: transparent;
 }
 
 QMainWindow,
 QDialog {
-    background-color: #f8fafc;
+    background-color: #f1f5f9;
 }
 
 QWidget {
@@ -24,7 +24,7 @@ QWidget {
 
 QWidget#centralWidget,
 QWidget#rootWidget {
-    background-color: #f8fafc;
+    background-color: #f1f5f9;
 }
 
 /* ─── SCROLL AREA ─────────────────────────────────────────── */
@@ -36,7 +36,7 @@ QScrollArea {
 
 QScrollBar:vertical {
     background-color: #e2e8f0;
-    width: 8px;
+    width: 7px;
     border-radius: 4px;
 }
 
@@ -55,6 +55,71 @@ QScrollBar::sub-line:vertical {
     height: 0;
 }
 
+/* ─── SIDEBAR ─────────────────────────────────────────────── */
+
+QFrame#sidebar {
+    background-color: #0f172a;
+    border-right: 1px solid #1e293b;
+    border-radius: 0;
+}
+
+QLabel#sidebarTitle {
+    color: #e2e8f0;
+    font-size: 13px;
+    font-weight: bold;
+    letter-spacing: 2px;
+    background-color: transparent;
+}
+
+QLabel#sidebarSubtitle {
+    color: #64748b;
+    font-size: 9px;
+    letter-spacing: 3px;
+    background-color: transparent;
+}
+
+QLabel#sidebarDivider {
+    background-color: #1e293b;
+    max-height: 1px;
+    min-height: 1px;
+}
+
+/* Sidebar navigation buttons */
+QPushButton#navBtn {
+    background-color: transparent;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 14px;
+    color: #94a3b8;
+    font-size: 11px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    text-align: left;
+}
+
+QPushButton#navBtn:hover {
+    background-color: #1e293b;
+    color: #e2e8f0;
+}
+
+QPushButton#navBtn:checked,
+QPushButton#navBtn:pressed {
+    background-color: #1d4ed8;
+    color: #ffffff;
+}
+
+QLabel#sidebarConnDot {
+    font-size: 10px;
+    background-color: transparent;
+}
+
+QLabel#sidebarConnLabel {
+    color: #64748b;
+    font-size: 9px;
+    letter-spacing: 1px;
+    background-color: transparent;
+}
+
 /* ─── HEADER PANEL ────────────────────────────────────────── */
 
 QWidget#headerPanel {
@@ -64,14 +129,14 @@ QWidget#headerPanel {
 
 QLabel#appTitle {
     color: #2563eb;
-    font-size: 18px;
+    font-size: 16px;
     font-weight: bold;
     letter-spacing: 2px;
 }
 
 QLabel#appSubtitle {
     color: #3b82f6;
-    font-size: 10px;
+    font-size: 9px;
     letter-spacing: 4px;
 }
 
@@ -97,7 +162,7 @@ QGroupBox {
     border-radius: 6px;
     margin-top: 14px;
     padding: 10px 8px 8px 8px;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: bold;
     letter-spacing: 1px;
     color: #475569;
@@ -130,13 +195,13 @@ QTabBar {
 QTabBar::tab {
     background-color: #f1f5f9;
     color: #475569;
-    padding: 8px 20px;
+    padding: 6px 16px;
     border: 1px solid #e2e8f0;
     border-bottom: none;
     border-top-left-radius: 6px;
     border-top-right-radius: 6px;
     margin-right: 2px;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: bold;
     letter-spacing: 1px;
 }
@@ -163,38 +228,38 @@ QLabel {
 
 QLabel#sectionTitle {
     color: #1e293b;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: bold;
     letter-spacing: 2px;
 }
 
 QLabel#statusValue {
     color: #2563eb;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: bold;
 }
 
 QLabel#statusOk {
     color: #16a34a;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: bold;
 }
 
 QLabel#statusWarn {
     color: #d97706;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: bold;
 }
 
 QLabel#statusError {
     color: #dc2626;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: bold;
 }
 
 QLabel#statusHeading {
     color: #64748b;
-    font-size: 10px;
+    font-size: 9px;
     letter-spacing: 1px;
 }
 
@@ -209,7 +274,7 @@ QPlainTextEdit {
     background-color: #ffffff;
     border: 1px solid #cbd5e1;
     border-radius: 5px;
-    padding: 5px 8px;
+    padding: 4px 8px;
     color: #0f172a;
     selection-background-color: #93c5fd;
     font-size: 12px;
@@ -240,7 +305,7 @@ QTextEdit[readOnly="true"] {
     border-color: #cbd5e1;
 }
 
-/* Spin box — compact ± buttons on the right, text stays clear */
+/* Spin box compact ± buttons */
 QSpinBox,
 QDoubleSpinBox {
     padding-right: 42px;
@@ -317,7 +382,6 @@ QComboBox::down-arrow {
     height: 8px;
     border-left: 2px solid #475569;
     border-bottom: 2px solid #475569;
-    transform: rotate(-45deg);
     margin-right: 4px;
 }
 
@@ -339,8 +403,8 @@ QCheckBox {
 }
 
 QCheckBox::indicator {
-    width: 16px;
-    height: 16px;
+    width: 15px;
+    height: 15px;
     border: 1px solid #cbd5e1;
     border-radius: 3px;
     background-color: #ffffff;
@@ -361,7 +425,7 @@ QPushButton {
     background-color: #f1f5f9;
     border: 1px solid #cbd5e1;
     border-radius: 5px;
-    padding: 7px 16px;
+    padding: 6px 14px;
     color: #1f2d3d;
     font-size: 11px;
     font-weight: bold;
@@ -395,6 +459,12 @@ QPushButton#btnPrimary {
 QPushButton#btnPrimary:hover {
     background-color: #3b82f6;
     border-color: #3b82f6;
+}
+
+QPushButton#btnPrimary:disabled {
+    background-color: #bfdbfe;
+    border-color: #bfdbfe;
+    color: #eff6ff;
 }
 
 /* Save / Apply */
@@ -474,13 +544,50 @@ QPushButton#btnStop:disabled {
     color: #94a3b8;
 }
 
+/* List Widget */
+QListWidget {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 5px;
+    font-size: 11px;
+    color: #0f172a;
+    outline: none;
+}
+
+QListWidget::item {
+    padding: 4px 8px;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+QListWidget::item:selected {
+    background-color: #dbeafe;
+    color: #1d4ed8;
+}
+
+QListWidget::item:hover:!selected {
+    background-color: #f8fafc;
+}
+
+/* Splitter */
+QSplitter::handle {
+    background-color: #e2e8f0;
+}
+
+QSplitter::handle:horizontal {
+    width: 3px;
+}
+
+QSplitter::handle:vertical {
+    height: 3px;
+}
+
 /* ─── STATUS BAR ──────────────────────────────────────────── */
 
 QStatusBar {
     background-color: #ffffff;
     color: #475569;
     border-top: 1px solid #e2e8f0;
-    font-size: 11px;
+    font-size: 10px;
 }
 
 QStatusBar::item {

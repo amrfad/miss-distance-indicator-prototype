@@ -8,20 +8,17 @@ import shlex
 import re
 import numpy as np
 from .config import (
-    ARECORD_DEVICE, 
-    SAMPLE_RATE, 
     CHANNELS, 
-    ARECORD_TERMINATE_TIMEOUT,
     DEVICE_PROFILES,
-    ACTIVE_PROFILE,
     get_take_indices
 )
+from .config_manager import get_global_config_manager
 
 
 class AudioRecorder:
     """Mengelola recording audio multi-channel via arecord dengan probing capability"""
     
-    def __init__(self, device=ARECORD_DEVICE, rate=SAMPLE_RATE):
+    def __init__(self, device=None, rate=None):
         """
         Initialize audio recorder
         
@@ -29,29 +26,34 @@ class AudioRecorder:
             device (str): ALSA device identifier (e.g., "hw:2,0")
             rate (int): Sample rate dalam Hz
         """
-        self.device = device
-        self.rate = rate
+        cfg = get_global_config_manager().get_config()
+        self.device = device if device is not None else cfg.get("arecord_device", "hw:2,0")
+        self.rate = rate if rate is not None else cfg.get("sample_rate", 48000)
         self.process = None
         self.output_path = None
         
         # Active configuration
-        self.active_profile_name = ACTIVE_PROFILE
+        cfg = get_global_config_manager().get_config()
+        active_prof = cfg.get("active_profile", "H8")
+        self.active_profile_name = active_prof
         self.active_channels = CHANNELS
         self.active_format = "S24_3LE"
-        self.active_take_indices = get_take_indices(ACTIVE_PROFILE)
+        self.active_take_indices = get_take_indices(active_prof, cfg.get("num_mics_h8", 6))
         
         # Configure initial profile
-        self.configure_profile(ACTIVE_PROFILE)
+        self.configure_profile(active_prof)
         
     def configure_profile(self, profile_name):
         """Set active profile"""
         if profile_name in DEVICE_PROFILES:
+            cfg = get_global_config_manager().get_config()
+            num_mics_h8 = cfg.get("num_mics_h8", 6)
             self.active_profile_name = profile_name
             profile = DEVICE_PROFILES[profile_name]
             self.active_channels = profile["channels"]
             self.active_format = profile["format"]
-            self.active_take_indices = get_take_indices(profile_name)
-            num_mics = profile.get("num_mics", 4)
+            self.active_take_indices = get_take_indices(profile_name, num_mics_h8)
+            num_mics = num_mics_h8 if profile_name == "H8" else profile.get("num_mics", 4)
             print(f"[RECORDER] Profile set to {profile_name} ({num_mics} mics)")
         else:
             print(f"[WARNING] Profile {profile_name} not found, using defaults")
@@ -142,11 +144,14 @@ class AudioRecorder:
 
     def _adjust_take_indices(self):
         """Adjust take_indices jika channel yang tersedia kurang dari yang diminta"""
+        cfg = get_global_config_manager().get_config()
+        num_mics_h8 = cfg.get("num_mics_h8", 6)
+        
         profile = DEVICE_PROFILES.get(self.active_profile_name, DEVICE_PROFILES["H6E"])
-        num_mics = profile.get("num_mics", 4)
+        num_mics = num_mics_h8 if self.active_profile_name == "H8" else profile.get("num_mics", 4)
         
         # Ambil indices yang sesuai dengan jumlah mic yang dikonfigurasi
-        profile_indices = get_take_indices(self.active_profile_name)
+        profile_indices = get_take_indices(self.active_profile_name, num_mics_h8)
         
         # Jika semua index profile ada dalam range channel aktif, gunakan itu
         if all(idx < self.active_channels for idx in profile_indices):
@@ -233,9 +238,12 @@ class AudioRecorder:
             return False
             
         try:
+            cfg = get_global_config_manager().get_config()
+            terminate_timeout = cfg.get("arecord_terminate_timeout", 3)
+            
             # Terminate process dengan gentle signal
             self.process.terminate()
-            self.process.wait(timeout=ARECORD_TERMINATE_TIMEOUT)
+            self.process.wait(timeout=terminate_timeout)
             print("[RECORDING] Stopped")
         except subprocess.TimeoutExpired:
             # Jika tidak terminate dalam timeout, paksa kill
@@ -272,8 +280,10 @@ class AudioRecorder:
         Returns:
             dict: Dictionary berisi status recording
         """
+        cfg = get_global_config_manager().get_config()
+        num_mics_h8 = cfg.get("num_mics_h8", 6)
         profile = DEVICE_PROFILES.get(self.active_profile_name, {})
-        num_mics = profile.get("num_mics", 4)
+        num_mics = num_mics_h8 if self.active_profile_name == "H8" else profile.get("num_mics", 4)
         
         return {
             "is_recording": self.is_recording(),

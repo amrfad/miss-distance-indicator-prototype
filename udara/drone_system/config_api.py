@@ -125,8 +125,7 @@ def create_app(config_manager: ConfigManager, audio_system=None) -> FastAPI:
             status = 400
             return _err(e.code, e.message, e.field, status=status)
 
-        # Apply ke module dan runtime objects
-        config_manager.apply_to_module()
+        # Apply ke runtime objects
         if audio_system is not None:
             detector = getattr(audio_system, "detector", None)
             processor = getattr(audio_system, "processor", None)
@@ -165,7 +164,6 @@ def create_app(config_manager: ConfigManager, audio_system=None) -> FastAPI:
         except ConfigError as e:
             return _err(e.code, e.message, e.field)
 
-        config_manager.apply_to_module()
         if audio_system is not None:
             detector = getattr(audio_system, "detector", None)
             config_manager.apply_to_runtime_objects(detector=detector)

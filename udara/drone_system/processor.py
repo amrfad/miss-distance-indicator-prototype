@@ -8,14 +8,8 @@ import ctypes
 from contextlib import redirect_stderr
 import numpy as np
 import soundfile as sf
-from .config import (
-    CHANNEL_INDICES, 
-    PROP_DECREASE, 
-    FREQ_MASK_SMOOTH_HZ, 
-    TIME_MASK_SMOOTH_MS,
-    NORMALIZE,
-    STATIONARY
-)
+from .config import CHANNEL_INDICES
+from .config_manager import get_global_config_manager
 
 # Mute ALSA warnings
 try:
@@ -67,7 +61,7 @@ class AudioProcessor:
         if not self.noisereduce_available:
             print("[WARNING] noisereduce tidak tersedia, filtering akan dilewati")
         
-    def extract_channels(self, wav_path, output_dir, sr_override=None, channel_indices=None, normalize=NORMALIZE):
+    def extract_channels(self, wav_path, output_dir, sr_override=None, channel_indices=None, normalize=None):
         """
         Ekstrak channel tertentu dari file multi-channel
         
@@ -81,6 +75,9 @@ class AudioProcessor:
         Returns:
             tuple: (original_files, data, sr, actual_duration)
         """
+        if normalize is None:
+            normalize = get_global_config_manager().get_config().get("normalize", False)
+            
         if not os.path.exists(wav_path):
             print(f"[ERROR] File tidak ditemukan: {wav_path}")
             return [], None, None, 0
@@ -135,11 +132,11 @@ class AudioProcessor:
             return [], None, None, 0
     
     def filter_channels(self, data, sr, output_dir, 
-                       prop_decrease=PROP_DECREASE,
-                       freq_smooth=FREQ_MASK_SMOOTH_HZ,
-                       time_smooth=TIME_MASK_SMOOTH_MS,
-                       normalize=NORMALIZE,
-                       stationary=STATIONARY,
+                       prop_decrease=None,
+                       freq_smooth=None,
+                       time_smooth=None,
+                       normalize=None,
+                       stationary=None,
                        channel_indices=None):
         """
         Filter setiap channel dengan noise reduction
@@ -166,6 +163,13 @@ class AudioProcessor:
             
         if data is None:
             return [], None
+            
+        cfg = get_global_config_manager().get_config()
+        if prop_decrease is None: prop_decrease = cfg.get("prop_decrease", 1.0)
+        if freq_smooth is None: freq_smooth = cfg.get("freq_mask_smooth_hz", 500)
+        if time_smooth is None: time_smooth = cfg.get("time_mask_smooth_ms", 50)
+        if normalize is None: normalize = cfg.get("normalize", False)
+        if stationary is None: stationary = cfg.get("stationary", False)
             
         # Use provided indices or default
         indices_to_use = channel_indices if channel_indices is not None else self.channel_indices

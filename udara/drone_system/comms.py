@@ -2,17 +2,18 @@ import serial
 import time
 import sys
 import os
-from .config import SERIAL_PORT, BAUD_RATE, SERIAL_TIMEOUT
+from .config_manager import get_global_config_manager
 
 START_MARKER = b"[START]\n"
 END_MARKER = b"\n[END]\n"
 CHUNK_SIZE = 1024
 
 class SerialCommunicator:
-    def __init__(self, port=SERIAL_PORT, baudrate=BAUD_RATE, timeout=SERIAL_TIMEOUT):
-        self.port = port
-        self.baudrate = baudrate
-        self.timeout = timeout
+    def __init__(self, port=None, baudrate=None, timeout=None):
+        cfg = get_global_config_manager().get_config()
+        self.port = port if port is not None else cfg.get("serial_port", "/dev/ttyUSB0")
+        self.baudrate = baudrate if baudrate is not None else cfg.get("baud_rate", 230400)
+        self.timeout = timeout if timeout is not None else cfg.get("serial_timeout", 5)
         self.ser = None
 
     def connect(self):

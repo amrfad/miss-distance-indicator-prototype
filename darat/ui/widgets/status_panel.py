@@ -1,32 +1,32 @@
-# UI/widgets/status_panel.py
+# darat/ui/widgets/status_panel.py
 from PyQt6.QtWidgets import QWidget, QGridLayout, QLabel, QFrame, QVBoxLayout
 from PyQt6.QtCore import Qt
 
 
 class StatusPanel(QWidget):
-    """Live device status grid.
+    """Compact live device-status grid (2 rows × 3 cols).
 
     Call ``update_status(dict)`` to push new values. Expected keys:
         zoom, raspi, sdr, mic_count, last_detection, session
     """
 
     _ITEMS = [
-        ("ZOOM CAM",    "zoom",           0, 0),
-        ("RASPBERRY PI","raspi",          0, 1),
-        ("SDR RADIO",   "sdr",            0, 2),
-        ("MICS ACTIVE", "mic_count",      1, 0),
-        ("LAST HIT",    "last_detection", 1, 1),
-        ("SESSION",     "session",        1, 2),   # was never populated — fixed in dashboard _poll_status
+        ("ZOOM CAM",     "zoom",           0, 0),
+        ("RASPBERRY PI", "raspi",          0, 1),
+        ("SDR RADIO",    "sdr",            0, 2),
+        ("MICS ACTIVE",  "mic_count",      1, 0),
+        ("LAST HIT",     "last_detection", 1, 1),
+        ("SESSION",      "session",        1, 2),
     ]
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent=None):
+        super().__init__(parent)
         self._value_labels: dict[str, QLabel] = {}
         self._build_ui()
 
     def _build_ui(self):
         grid = QGridLayout(self)
-        grid.setSpacing(8)
+        grid.setSpacing(6)
         grid.setContentsMargins(0, 0, 0, 0)
 
         for heading_text, key, row, col in self._ITEMS:
@@ -34,8 +34,8 @@ class StatusPanel(QWidget):
             cell.setObjectName("card")
 
             cell_layout = QVBoxLayout(cell)
-            cell_layout.setSpacing(4)
-            cell_layout.setContentsMargins(10, 8, 10, 8)
+            cell_layout.setSpacing(2)
+            cell_layout.setContentsMargins(8, 6, 8, 6)
 
             heading = QLabel(heading_text)
             heading.setObjectName("statusHeading")
