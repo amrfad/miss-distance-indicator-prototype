@@ -1,0 +1,24 @@
+[project]
+name = "darat"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "contourpy==1.3.2",
+    "cycler==0.12.1",
+    "fastapi>=0.115.0",
+    "fonttools==4.61.0",
+    "kiwisolver==1.4.9",
+    "matplotlib==3.10.7",
+    "numpy==2.2.6",
+    "packaging==25.0",
+    "pillow==12.0.0",
+    "pyparsing==3.2.5",
+    "pyserial==3.5",
+    "pyside6>=6.5.0",
+    "pytest==9.0.3",
+    "python-dateutil==2.9.0.post0",
+    "requests>=2.31.0",
+    "scipy==1.15.3",
+    "six==1.17.0",
+    "uvicorn[standard]>=0.30.0",
+]
