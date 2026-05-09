@@ -1,14 +1,14 @@
 # darat/ui/config_raspi.py
 """Raspberry Pi configuration panel — Multi-column layout (2 columns)."""
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QGroupBox, QGridLayout, QVBoxLayout,
     QHBoxLayout, QLineEdit, QComboBox,
     QSpinBox, QDoubleSpinBox, QPushButton,
     QCheckBox, QMessageBox, QLabel,
     QScrollArea, QFrame,
 )
-from PyQt6.QtCore import pyqtSignal, Qt
+from PySide6.QtCore import Signal, Qt
 
 _LABEL_W = 140
 _COLUMN_SPACING = 20
@@ -37,9 +37,9 @@ def _lbl(text: str, restart: bool = False, tooltip: str = "") -> QLabel:
 class RaspiConfigPanel(QWidget):
     """Configuration panel for the Drone (Raspberry Pi) — 2 column layout."""
 
-    config_save_requested = pyqtSignal(dict)
-    config_reset_requested = pyqtSignal()
-    restart_drone_requested = pyqtSignal()
+    config_save_requested = Signal(dict)
+    config_reset_requested = Signal()
+    restart_drone_requested = Signal()
 
     _DEFAULTS = {
         "operation_mode": "OFFLINE",

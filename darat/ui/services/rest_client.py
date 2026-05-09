@@ -6,14 +6,14 @@ Runs requests in QThread workers so the GUI thread is never blocked.
 
 from typing import Optional
 
-from PyQt6.QtCore import QObject, QThread, pyqtSignal
+from PySide6.QtCore import QObject, QThread, Signal
 
 
 class _ApiWorker(QObject):
     """Background worker (one-shot) that performs a single HTTP request."""
 
-    finished = pyqtSignal(dict)
-    error    = pyqtSignal(str)
+    finished = Signal(dict)
+    error    = Signal(str)
 
     def __init__(self, method: str, url: str, body: Optional[dict] = None):
         super().__init__()
@@ -59,20 +59,20 @@ class RestClient(QObject):
     """
 
     # Drone API
-    drone_config_received  = pyqtSignal(dict)
-    drone_config_updated   = pyqtSignal(dict)
-    drone_status_received  = pyqtSignal(dict)
-    drone_restarted        = pyqtSignal(dict)
-    drone_schema_received  = pyqtSignal(dict)
+    drone_config_received  = Signal(dict)
+    drone_config_updated   = Signal(dict)
+    drone_status_received  = Signal(dict)
+    drone_restarted        = Signal(dict)
+    drone_schema_received  = Signal(dict)
 
     # Ground station API
-    ground_config_received = pyqtSignal(dict)
-    ground_config_updated  = pyqtSignal(dict)
-    ground_schema_received = pyqtSignal(dict)
-    ground_config_reset    = pyqtSignal(dict)
+    ground_config_received = Signal(dict)
+    ground_config_updated  = Signal(dict)
+    ground_schema_received = Signal(dict)
+    ground_config_reset    = Signal(dict)
 
     # Generic error for any failed request
-    error = pyqtSignal(str)
+    error = Signal(str)
 
     def __init__(
         self,

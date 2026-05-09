@@ -1,8 +1,8 @@
 # darat/ui/widgets/status_panel.py
 """Compact live device-status — 1 row horizontal layout."""
 
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QFrame, QLabel, QVBoxLayout
-from PyQt6.QtCore import Qt
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QFrame, QLabel, QVBoxLayout
+from PySide6.QtCore import Qt
 
 
 class StatusPanel(QWidget):

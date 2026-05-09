@@ -1,9 +1,9 @@
 # darat/ui/widgets/log_panel.py
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QTextEdit, QPushButton, QLabel, QFrame,
 )
-from PyQt6.QtCore import QDateTime, Qt
+from PySide6.QtCore import QDateTime, Qt
 
 
 class LogPanel(QWidget):

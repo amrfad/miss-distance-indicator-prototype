@@ -4,12 +4,12 @@
 import os
 from datetime import datetime
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QStackedWidget, QFrame, QLabel, QPushButton,
     QButtonGroup, QSplitter,
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSlot
+from PySide6.QtCore import Qt, QTimer, Slot
 
 from ..serial_manager import SerialManager
 from ..file_transfer import FileTransferManager
@@ -354,38 +354,38 @@ class MainDashboard(QMainWindow):
         if btn:
             btn.setChecked(True)
 
-    @pyqtSlot()
+    @Slot()
     def _do_connect(self):
         self._log.log("Connecting to serial port…", "INFO")
         ok = self._serial_bridge.connect_auto()
         if not ok:
             self._log.log("Auto-connect failed. Check port and baud rate.", "ERROR")
 
-    @pyqtSlot()
+    @Slot()
     def _do_disconnect(self):
         self._serial_bridge.disconnect()
         self._log.log("Serial port disconnected.", "INFO")
 
-    @pyqtSlot()
+    @Slot()
     def _do_start_record(self):
         from ..config import CMD_START_RECORD
         self._serial_bridge.send_command(CMD_START_RECORD)
         self._toolbar.set_recording(True)
         self._log.log("Recording started (via toolbar)", "INFO")
 
-    @pyqtSlot()
+    @Slot()
     def _do_stop_record(self):
         from ..config import CMD_STOP_RECORD
         self._serial_bridge.send_command(CMD_STOP_RECORD)
         self._toolbar.set_recording(False)
         self._log.log("Recording stopped (via toolbar)", "INFO")
 
-    @pyqtSlot()
+    @Slot()
     def _do_apply_serial(self):
         runtime_cfg = self._page_config.get_runtime_config()
         self._apply_serial_config(runtime_cfg)
 
-    @pyqtSlot(dict)
+    @Slot(dict)
     def _apply_serial_config(self, cfg: dict):
         if not cfg:
             self._log.log("No runtime params to send via serial.", "WARNING")
@@ -396,12 +396,12 @@ class MainDashboard(QMainWindow):
         else:
             self._log.log("SET_CONFIG failed — check serial connection.", "ERROR")
 
-    @pyqtSlot()
+    @Slot()
     def _do_restart_drone(self):
         self._rest_client.restart_drone()
         self._log.log("Restart command sent to drone via REST API.", "WARNING")
 
-    @pyqtSlot(bool, str)
+    @Slot(bool, str)
     def _on_connection_changed(self, connected: bool, port: str):
         self._toolbar.set_connected(connected, port)
         if connected:
@@ -416,7 +416,7 @@ class MainDashboard(QMainWindow):
             self._bottom_status.setText("● NOT CONNECTED")
             self._bottom_status.setObjectName("statusError")
 
-    @pyqtSlot(str)
+    @Slot(str)
     def _on_json_received(self, filename: str):
         self._status.update_status({"last_detection": os.path.basename(filename) if filename else "—"})
         if filename:
@@ -424,7 +424,7 @@ class MainDashboard(QMainWindow):
             self._page_process.set_working_dir(d)
             self._page_visualize.set_working_dir(d)
 
-    @pyqtSlot(str)
+    @Slot(str)
     def _on_results_saved(self, results_path: str):
         if not results_path:
             return
@@ -433,7 +433,7 @@ class MainDashboard(QMainWindow):
         self._navigate(self._PAGE_VISUALIZE)
         self._log.log(f"Auto-switched to Visualize: {os.path.basename(results_path)}", "INFO")
 
-    @pyqtSlot()
+    @Slot()
     def _tick_clock(self):
         now = datetime.now()
         self._clock_label.setText(now.strftime("  %H:%M:%S  ·  %Y-%m-%d"))

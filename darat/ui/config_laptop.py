@@ -4,12 +4,12 @@
 Acts purely as a UI view. Reads and writes are handled via signals and REST API.
 """
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QGroupBox, QFormLayout, QVBoxLayout, QHBoxLayout,
     QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPushButton,
     QCheckBox, QMessageBox, QLabel, QGridLayout, QScrollArea, QFrame,
 )
-from PyQt6.QtCore import pyqtSignal, Qt
+from PySide6.QtCore import Signal, Qt
 
 _DEFAULT_MIC_POSITIONS = {
     "mic0": {"x": -1.58, "y": 0.77, "z": 0.09},
@@ -24,8 +24,8 @@ _DEFAULT_MIC_POSITIONS = {
 class LaptopConfigPanel(QWidget):
     """Configuration panel for the Ground Station (laptop/PC) — 2 column layout."""
 
-    config_save_requested = pyqtSignal(dict)
-    config_reset_requested = pyqtSignal()
+    config_save_requested = Signal(dict)
+    config_reset_requested = Signal()
 
     _DEFAULTS = {
         "serial_port": "COM3",

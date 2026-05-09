@@ -7,7 +7,7 @@ background threads, enabling thread-safe UI updates.
 
 import json
 
-from PyQt6.QtCore import QObject, pyqtSignal
+from PySide6.QtCore import QObject, Signal
 
 from ...serial_manager import SerialManager
 from ...config import (
@@ -25,13 +25,13 @@ class SerialBridge(QObject):
     """
 
     # Emitted when connection status changes (connected, port_name)
-    connection_changed = pyqtSignal(bool, str)
+    connection_changed = Signal(bool, str)
     # Emitted for every log/status message from the serial layer
-    message_received   = pyqtSignal(str)
+    message_received   = Signal(str)
     # Emitted when raw bytes arrive (forwarded to FileTransferManager)
-    data_received      = pyqtSignal(bytes)
+    data_received      = Signal(bytes)
     # Emitted after a command is successfully written
-    command_sent       = pyqtSignal(str)
+    command_sent       = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)

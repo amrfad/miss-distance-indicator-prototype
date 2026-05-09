@@ -6,13 +6,13 @@ import json
 import os
 import traceback
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
     QFrame, QLabel, QListWidget, QListWidgetItem,
     QPushButton, QTextEdit, QFileDialog, QMessageBox,
 )
-from PyQt6.QtCore import pyqtSignal, Qt, QThread, QObject
-from PyQt6.QtGui import QColor
+from PySide6.QtCore import Signal, Qt, QThread, QObject
+from PySide6.QtGui import QColor
 
 from ...process_json_tdoa import process_event_tdoa, save_results_to_file
 from ...config_manager import get_global_config_manager
@@ -21,9 +21,9 @@ from ...config_manager import get_global_config_manager
 class _ProcessWorker(QObject):
     """Background worker for TDOA processing (heavy CPU — never block GUI)."""
 
-    finished = pyqtSignal(str, list)   # (filename, events_results)
-    progress = pyqtSignal(str)         # log line
-    error    = pyqtSignal(str)         # error message
+    finished = Signal(str, list)   # (filename, events_results)
+    progress = Signal(str)         # log line
+    error    = Signal(str)         # error message
 
     def __init__(self, filename: str, mic_positions: dict):
         super().__init__()
@@ -81,8 +81,8 @@ class ProcessPage(QWidget):
     results_saved(str)            — path to *_results.txt (for Visualize tab)
     """
 
-    log_message   = pyqtSignal(str, str)
-    results_saved = pyqtSignal(str)
+    log_message   = Signal(str, str)
+    results_saved = Signal(str)
 
     def __init__(self, working_dir: str = "", parent=None):
         super().__init__(parent)

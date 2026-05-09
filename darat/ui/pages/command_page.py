@@ -4,11 +4,11 @@
 import os
 import threading
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QFrame, QPushButton, QLabel, QFileDialog,
 )
-from PyQt6.QtCore import pyqtSignal, Qt
+from PySide6.QtCore import Signal, Qt
 
 from ...config import (
     CMD_STANDBY, CMD_START_RECORD, CMD_STOP_RECORD,
@@ -30,10 +30,10 @@ class CommandPage(QWidget):
     json_received(str)       — filename of saved JSON
     """
 
-    log_message       = pyqtSignal(str, str)
-    recording_started = pyqtSignal()
-    recording_stopped = pyqtSignal()
-    json_received     = pyqtSignal(str)
+    log_message       = Signal(str, str)
+    recording_started = Signal()
+    recording_stopped = Signal()
+    json_received     = Signal(str)
 
     def __init__(self, serial_bridge, file_transfer, json_receiver, parent=None):
         super().__init__(parent)

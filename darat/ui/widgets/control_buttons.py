@@ -1,6 +1,6 @@
 # darat/ui/widgets/control_buttons.py
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLabel, QFrame
-from PyQt6.QtCore import pyqtSignal
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLabel, QFrame
+from PySide6.QtCore import Signal
 
 
 class ControlButtons(QWidget):
@@ -15,11 +15,11 @@ class ControlButtons(QWidget):
     apply_serial_clicked   — user pressed Apply Config via Serial (in-flight)
     """
 
-    connect_clicked      = pyqtSignal()
-    disconnect_clicked   = pyqtSignal()
-    start_clicked        = pyqtSignal()
-    stop_clicked         = pyqtSignal()
-    apply_serial_clicked = pyqtSignal()
+    connect_clicked      = Signal()
+    disconnect_clicked   = Signal()
+    start_clicked        = Signal()
+    stop_clicked         = Signal()
+    apply_serial_clicked = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)

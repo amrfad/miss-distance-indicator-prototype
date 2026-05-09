@@ -4,12 +4,12 @@
 import glob
 import os
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
     QFrame, QLabel, QListWidget, QListWidgetItem,
     QPushButton, QTabWidget, QMessageBox,
 )
-from PyQt6.QtCore import pyqtSignal, Qt
+from PySide6.QtCore import Signal, Qt
 
 import matplotlib
 matplotlib.use("QtAgg")  # Qt6-compatible Agg backend
@@ -65,7 +65,7 @@ class VisualizePage(QWidget):
     log_message(str, str)   — shared log panel
     """
 
-    log_message = pyqtSignal(str, str)
+    log_message = Signal(str, str)
 
     def __init__(self, working_dir: str = "", parent=None):
         super().__init__(parent)
@@ -231,7 +231,7 @@ class VisualizePage(QWidget):
         )
 
     def _change_directory(self):
-        from PyQt6.QtWidgets import QFileDialog
+        from PySide6.QtWidgets import QFileDialog
         d = QFileDialog.getExistingDirectory(
             self, "Choose directory containing result files", self._working_dir
         )

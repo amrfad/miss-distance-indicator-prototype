@@ -3,12 +3,12 @@
 
 import json
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
     QFrame, QTextEdit, QPushButton, QLabel, QMessageBox,
     QDialog,  # tambah ini untuk modal dialog
 )
-from PyQt6.QtCore import pyqtSignal, Qt  # ← TAMBAHKAN Qt di sini
+from PySide6.QtCore import Signal, Qt 
 
 from ..config_raspi import RaspiConfigPanel
 from ..config_laptop import LaptopConfigPanel
@@ -24,9 +24,9 @@ class ConfigPage(QWidget):
     apply_serial_requested(dict) — runtime params ready to send via serial
     """
 
-    log_message       = pyqtSignal(str, str)
-    restart_requested = pyqtSignal()
-    apply_serial_requested = pyqtSignal(dict)
+    log_message       = Signal(str, str)
+    restart_requested = Signal()
+    apply_serial_requested = Signal(dict)
 
     def __init__(self, rest_client=None, parent=None):
         super().__init__(parent)
@@ -35,7 +35,7 @@ class ConfigPage(QWidget):
         self._wire_signals()
 
         # Delay initial fetch slightly to let daemon APIs start
-        from PyQt6.QtCore import QTimer
+        from PySide6.QtCore import QTimer
         QTimer.singleShot(500, self._fetch_initial_configs)
 
     def _build_ui(self):
@@ -87,7 +87,7 @@ class ConfigPage(QWidget):
 
     def _show_preview_dialog(self):
         """Open modal dialog with JSON config preview."""
-        from PyQt6.QtWidgets import QTextEdit, QVBoxLayout, QPushButton, QHBoxLayout
+        from PySide6.QtWidgets import QTextEdit, QVBoxLayout, QPushButton, QHBoxLayout
         import json
 
         active_tab = self._tabs.currentIndex()
@@ -128,7 +128,7 @@ class ConfigPage(QWidget):
 
     def _copy_json_to_clipboard(self, cfg: dict):
         import json
-        from PyQt6.QtWidgets import QApplication
+        from PySide6.QtWidgets import QApplication
         clipboard = QApplication.clipboard()
         clipboard.setText(json.dumps(cfg, indent=2))
         self.log_message.emit("Config JSON copied to clipboard", "INFO")
