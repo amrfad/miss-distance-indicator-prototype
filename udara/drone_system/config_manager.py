@@ -196,6 +196,18 @@ _PARAM_SCHEMA = [
         "type": "string", "default": "session_tdoa.json",
         "category": "ground_only", "requires_restart": True, "unit": None,
     },
+    {
+        "key": "api_host", "label": "API Host",
+        "description": "Host binding untuk REST API server. '0.0.0.0' untuk IPv4, '::' untuk IPv6 dual-stack",
+        "type": "string", "default": "0.0.0.0",
+        "category": "ground_only", "requires_restart": True, "unit": None,
+    },
+    {
+        "key": "api_port", "label": "API Port",
+        "description": "Port untuk REST API server",
+        "type": "integer", "default": 5000, "min": 1, "max": 65535, "step": 1,
+        "category": "ground_only", "requires_restart": True, "unit": None,
+    },
     # ── Runtime / Dual (🔄) ───────────────────────────────────────────
     {
         "key": "min_duration", "label": "Min Event Duration",
@@ -311,6 +323,8 @@ _KEY_TO_CONFIG_VAR = {
     "events_csv": "EVENTS_CSV",
     "events_json": "EVENTS_JSON",
     "tdoa_json": "TDOA_JSON",
+    "api_host": "API_HOST",
+    "api_port": "API_PORT",
     "min_duration": "MIN_DURATION",
     "max_gap": "MAX_GAP",
     "detect_ratio": "DETECT_RATIO",

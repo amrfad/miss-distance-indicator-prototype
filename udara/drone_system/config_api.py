@@ -241,14 +241,20 @@ def _check_serial_connected(audio_system) -> bool:
 def start_api_thread(
     config_manager: ConfigManager,
     audio_system=None,
-    host: str = "0.0.0.0",
-    port: int = 5000,
+    host: str = None,
+    port: int = None,
 ) -> threading.Thread:
     """
     Start FastAPI server di background daemon thread.
 
     Dipanggil dari main.py setelah inisialisasi audio_system dan config_manager.
     Thread bersifat daemon sehingga otomatis berhenti ketika main thread exit.
+
+    Args:
+        config_manager: ConfigManager instance untuk membaca api_host dan api_port
+        audio_system:   DroneAudioSystem instance (optional)
+        host:           Override host (jika None, baca dari config)
+        port:           Override port (jika None, baca dari config)
 
     Returns:
         Thread yang sudah di-start
@@ -258,6 +264,18 @@ def start_api_thread(
     except ImportError:
         print("[CONFIG API] uvicorn tidak tersedia. Install: pip install uvicorn[standard]")
         return None
+
+    # Baca host dan port dari config jika tidak di-override
+    if host is None:
+        try:
+            host = config_manager.get("api_host")
+        except Exception:
+            host = "0.0.0.0"
+    if port is None:
+        try:
+            port = config_manager.get("api_port")
+        except Exception:
+            port = 5000
 
     app = create_app(config_manager, audio_system)
 

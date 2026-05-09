@@ -18,7 +18,7 @@ CMD_TRANSMIT = "TRANSMIT"
 CMD_SET_CONFIG = "SET_CONFIG"
 
 # ============================================================
-# CONFIG UI SERIAL PROTOCOL (section 5.5 communication contract)
+# CONFIG UI SERIAL PROTOCOL
 # ============================================================
 CONFIG_TX_START_MARKER = "[CONFIG_START]"
 CONFIG_TX_END_MARKER = "[CONFIG_END]"

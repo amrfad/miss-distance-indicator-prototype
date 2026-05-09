@@ -220,7 +220,8 @@ def main():
     )
 
     # Start Config REST API di daemon thread
-    start_api_thread(config_manager, audio_system, port=5000)
+    # Host dan port dibaca dari config_manager (api_host, api_port)
+    start_api_thread(config_manager, audio_system)
 
     if config_manager.get("operation_mode") == "ONLINE":
         return run_online_mode(audio_system, config_manager)

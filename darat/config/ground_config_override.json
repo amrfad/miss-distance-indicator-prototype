@@ -2,7 +2,7 @@
   "baud_rate": 230400,
   "serial_timeout": 1.0,
   "serial_port": "COM3",
-  "use_tcp": true,
+  "use_tcp": false,
   "raspi_ip": "raspberrypi.local",
   "tcp_port": 5000,
   "speed_of_sound": 343.0,
@@ -17,7 +17,7 @@
   "plot_buffer_size": 1000,
   "mic_positions": {
     "mic0": {
-      "x": -1.6,
+      "x": -1.58,
       "y": 0.77,
       "z": 0.09
     },
