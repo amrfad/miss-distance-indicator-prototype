@@ -1,8 +1,5 @@
 # darat/ui/config_raspi.py
-"""Raspberry Pi configuration panel.
-
-Acts purely as a UI view. Reads and writes are handled via signals and REST API.
-"""
+"""Raspberry Pi configuration panel — Multi-column layout (2 columns)."""
 
 from PyQt6.QtWidgets import (
     QWidget, QGroupBox, QGridLayout, QVBoxLayout,
@@ -13,7 +10,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import pyqtSignal, Qt
 
-_LABEL_W = 150
+_LABEL_W = 140
+_COLUMN_SPACING = 20
 
 _RESTART_REQUIRED = {
     "operation_mode", "serial_port", "baud_rate", "serial_timeout", "arecord_device",
@@ -23,7 +21,7 @@ _RESTART_REQUIRED = {
 }
 
 
-def _lbl(text: str, restart: bool = False) -> QLabel:
+def _lbl(text: str, restart: bool = False, tooltip: str = "") -> QLabel:
     display = f"{text} ⚠" if restart else text
     lbl = QLabel(display)
     lbl.setFixedWidth(_LABEL_W)
@@ -31,65 +29,49 @@ def _lbl(text: str, restart: bool = False) -> QLabel:
     if restart:
         lbl.setToolTip("⚠ Requires drone restart to take effect")
         lbl.setStyleSheet("color: #d97706;")
+    if tooltip:
+        lbl.setToolTip(tooltip)
     return lbl
 
 
-def _row(grid: QGridLayout, r: int, label: str, widget, col: int = 0, restart: bool = False):
-    grid.addWidget(_lbl(label, restart), r, col,
-                   Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-    grid.addWidget(widget, r, col + 1)
-
-
-def _make_grid(parent: QGroupBox) -> QGridLayout:
-    g = QGridLayout(parent)
-    g.setSpacing(8)
-    g.setContentsMargins(12, 8, 12, 12)
-    g.setColumnMinimumWidth(0, _LABEL_W)
-    g.setColumnMinimumWidth(2, _LABEL_W)
-    g.setColumnStretch(1, 1)
-    g.setColumnStretch(3, 1)
-    g.setHorizontalSpacing(8)
-    return g
-
-
 class RaspiConfigPanel(QWidget):
-    """Configuration panel for the Drone (Raspberry Pi)."""
+    """Configuration panel for the Drone (Raspberry Pi) — 2 column layout."""
 
-    config_save_requested  = pyqtSignal(dict)
+    config_save_requested = pyqtSignal(dict)
     config_reset_requested = pyqtSignal()
     restart_drone_requested = pyqtSignal()
 
     _DEFAULTS = {
-        "operation_mode":            "OFFLINE",
-        "serial_port":               "/dev/ttyUSB0",
-        "baud_rate":                 230400,
-        "serial_timeout":            5.0,
-        "arecord_device":            "hw:2,0",
-        "sample_rate":               48000,
-        "active_profile":            "H8",
-        "num_mics_h8":               6,
-        "base_output_dir":           "drone_recordings",
-        "is_gcc_phat":               True,
+        "operation_mode": "OFFLINE",
+        "serial_port": "/dev/ttyUSB0",
+        "baud_rate": 230400,
+        "serial_timeout": 5.0,
+        "arecord_device": "hw:2,0",
+        "sample_rate": 48000,
+        "active_profile": "H8",
+        "num_mics_h8": 6,
+        "base_output_dir": "drone_recordings",
+        "is_gcc_phat": True,
         "arecord_terminate_timeout": 3.0,
-        "events_csv":                "detected_events.csv",
-        "events_json":               "session_events.json",
-        "tdoa_json":                 "session_tdoa.json",
-        "min_duration":              0.25,
-        "max_gap":                   0.1,
-        "detect_ratio":              0.20,
-        "filter_ratio":              0.40,
-        "ignore_time":               0.5,
-        "prop_decrease":             1.0,
-        "stationary":                False,
-        "normalize":                 False,
-        "freq_mask_smooth_hz":       100,
-        "time_mask_smooth_ms":       10,
-        "hop_length":                512,
-        "frame_length":              1024,
-        "normalization_percentile":  99.9,
-        "event_padding_sec":         0.3,
-        "post_recording_delay":      0.5,
-        "main_loop_delay":           0.1,
+        "events_csv": "detected_events.csv",
+        "events_json": "session_events.json",
+        "tdoa_json": "session_tdoa.json",
+        "min_duration": 0.25,
+        "max_gap": 0.1,
+        "detect_ratio": 0.20,
+        "filter_ratio": 0.40,
+        "ignore_time": 0.5,
+        "prop_decrease": 1.0,
+        "stationary": False,
+        "normalize": False,
+        "freq_mask_smooth_hz": 100,
+        "time_mask_smooth_ms": 10,
+        "hop_length": 512,
+        "frame_length": 1024,
+        "normalization_percentile": 99.9,
+        "event_padding_sec": 0.3,
+        "post_recording_delay": 0.5,
+        "main_loop_delay": 0.1,
     }
 
     def __init__(self, parent=None):
@@ -109,25 +91,44 @@ class RaspiConfigPanel(QWidget):
         outer.setContentsMargins(8, 8, 8, 8)
         outer.setSpacing(10)
 
+        # Restart banner
         self._restart_banner = self._build_restart_banner()
         outer.addWidget(self._restart_banner)
 
+        # Legend
         legend = QLabel(
             "⚠ = Requires restart  ·  "
-            "<span style='color:#2563eb'>🔒 Ground-Only</span>  ·  "
             "<span style='color:#16a34a'>🔄 Runtime (live)</span>"
         )
         legend.setTextFormat(Qt.TextFormat.RichText)
         legend.setStyleSheet("font-size:10px; color:#64748b; padding:2px 4px;")
         outer.addWidget(legend)
 
-        outer.addWidget(self._group_operation())
-        outer.addWidget(self._group_audio())
-        outer.addWidget(self._group_detection())
-        outer.addWidget(self._group_noise_reduction())
-        outer.addWidget(self._group_tdoa())
-        outer.addWidget(self._group_timing())
-        outer.addWidget(self._group_output_files())
+        # === 2 COLUMN LAYOUT ===
+        columns_layout = QHBoxLayout()
+        columns_layout.setSpacing(_COLUMN_SPACING)
+
+        # Column 1
+        col1 = QVBoxLayout()
+        col1.setSpacing(10)
+        col1.addWidget(self._group_operation())
+        col1.addWidget(self._group_audio())
+        col1.addWidget(self._group_tdoa())
+        col1.addWidget(self._group_output_files())
+        col1.addStretch()
+
+        # Column 2
+        col2 = QVBoxLayout()
+        col2.setSpacing(10)
+        col2.addWidget(self._group_detection())
+        col2.addWidget(self._group_noise_reduction())
+        col2.addWidget(self._group_timing())
+        col2.addStretch()
+
+        columns_layout.addLayout(col1, stretch=1)
+        columns_layout.addLayout(col2, stretch=1)
+
+        outer.addLayout(columns_layout)
         outer.addLayout(self._action_buttons())
         outer.addStretch()
 
@@ -164,178 +165,262 @@ class RaspiConfigPanel(QWidget):
         return banner
 
     def _group_operation(self):
-        grp = QGroupBox("🔒  OPERATION MODE  (restart required)")
-        g = _make_grid(grp)
+        grp = QGroupBox("🔒 OPERATION MODE")
+        g = QGridLayout(grp)
+        g.setSpacing(8)
+        g.setContentsMargins(12, 12, 12, 12)
 
         self.operation_mode = QComboBox()
         self.operation_mode.addItems(["OFFLINE", "ONLINE"])
-        self.operation_mode.setToolTip("OFFLINE = keyboard control; ONLINE = serial command from ground")
-        _row(g, 0, "Operation Mode:", self.operation_mode, col=0, restart=True)
+        g.addWidget(_lbl("Operation Mode:", restart=True), 0, 0)
+        g.addWidget(self.operation_mode, 0, 1)
 
         self.active_profile = QComboBox()
         self.active_profile.addItems(["H8", "H6E"])
-        _row(g, 0, "Device Profile:", self.active_profile, col=2, restart=True)
+        g.addWidget(_lbl("Device Profile:", restart=True), 1, 0)
+        g.addWidget(self.active_profile, 1, 1)
 
         self.base_output_dir = QLineEdit()
         self.base_output_dir.setPlaceholderText("drone_recordings")
-        _row(g, 1, "Output Directory:", self.base_output_dir, col=0, restart=True)
+        g.addWidget(_lbl("Output Directory:", restart=True), 2, 0)
+        g.addWidget(self.base_output_dir, 2, 1)
+
         return grp
 
     def _group_audio(self):
-        grp = QGroupBox("🔒  AUDIO CONFIGURATION  (restart required)")
-        g = _make_grid(grp)
+        grp = QGroupBox("🔒 AUDIO CONFIGURATION")
+        g = QGridLayout(grp)
+        g.setSpacing(8)
+        g.setContentsMargins(12, 12, 12, 12)
 
         self.sample_rate = QComboBox()
         self.sample_rate.addItems(["44100", "48000", "96000"])
-        _row(g, 0, "Sample Rate (Hz):", self.sample_rate, col=0, restart=True)
+        g.addWidget(_lbl("Sample Rate (Hz):", restart=True), 0, 0)
+        g.addWidget(self.sample_rate, 0, 1)
 
         self.num_mics_h8 = QSpinBox()
         self.num_mics_h8.setRange(4, 6)
         self.num_mics_h8.setSingleStep(2)
-        self.num_mics_h8.setToolTip("4 or 6 mics")
-        _row(g, 0, "Mic Count:", self.num_mics_h8, col=2, restart=True)
+        g.addWidget(_lbl("Mic Count:", restart=True), 1, 0)
+        g.addWidget(self.num_mics_h8, 1, 1)
 
         self.arecord_device = QLineEdit()
         self.arecord_device.setPlaceholderText("hw:2,0")
-        _row(g, 1, "Audio Device:", self.arecord_device, col=0, restart=True)
+        g.addWidget(_lbl("Audio Device:", restart=True), 2, 0)
+        g.addWidget(self.arecord_device, 2, 1)
 
         self.arecord_terminate_timeout = QDoubleSpinBox()
         self.arecord_terminate_timeout.setRange(1.0, 30.0)
         self.arecord_terminate_timeout.setSingleStep(0.5)
         self.arecord_terminate_timeout.setSuffix(" s")
-        _row(g, 1, "Terminate Timeout:", self.arecord_terminate_timeout, col=2, restart=True)
+        g.addWidget(_lbl("Terminate Timeout:", restart=True), 3, 0)
+        g.addWidget(self.arecord_terminate_timeout, 3, 1)
+
         return grp
 
     def _group_detection(self):
-        grp = QGroupBox("🔄  EVENT DETECTION  (live — no restart needed)")
-        g = _make_grid(grp)
+        grp = QGroupBox("🔄 EVENT DETECTION")
+        g = QGridLayout(grp)
+        g.setSpacing(8)
+        g.setContentsMargins(12, 12, 12, 12)
 
         self.detect_ratio = QDoubleSpinBox()
-        self.detect_ratio.setRange(0.01, 1.0); self.detect_ratio.setSingleStep(0.01); self.detect_ratio.setDecimals(2)
-        _row(g, 0, "Detect Ratio:", self.detect_ratio, col=0)
+        self.detect_ratio.setRange(0.01, 1.0)
+        self.detect_ratio.setSingleStep(0.01)
+        self.detect_ratio.setDecimals(2)
+        g.addWidget(_lbl("Detect Ratio:"), 0, 0)
+        g.addWidget(self.detect_ratio, 0, 1)
 
         self.filter_ratio = QDoubleSpinBox()
-        self.filter_ratio.setRange(0.01, 1.0); self.filter_ratio.setSingleStep(0.01); self.filter_ratio.setDecimals(2)
-        _row(g, 0, "Filter Ratio:", self.filter_ratio, col=2)
+        self.filter_ratio.setRange(0.01, 1.0)
+        self.filter_ratio.setSingleStep(0.01)
+        self.filter_ratio.setDecimals(2)
+        g.addWidget(_lbl("Filter Ratio:"), 1, 0)
+        g.addWidget(self.filter_ratio, 1, 1)
 
         self.min_duration = QDoubleSpinBox()
-        self.min_duration.setRange(0.01, 5.0); self.min_duration.setSingleStep(0.05); self.min_duration.setDecimals(2); self.min_duration.setSuffix(" s")
-        _row(g, 1, "Min Duration:", self.min_duration, col=0)
+        self.min_duration.setRange(0.01, 5.0)
+        self.min_duration.setSingleStep(0.05)
+        self.min_duration.setDecimals(2)
+        self.min_duration.setSuffix(" s")
+        g.addWidget(_lbl("Min Duration:"), 2, 0)
+        g.addWidget(self.min_duration, 2, 1)
 
         self.max_gap = QDoubleSpinBox()
-        self.max_gap.setRange(0.01, 5.0); self.max_gap.setSingleStep(0.01); self.max_gap.setDecimals(2); self.max_gap.setSuffix(" s")
-        _row(g, 1, "Max Gap:", self.max_gap, col=2)
+        self.max_gap.setRange(0.01, 5.0)
+        self.max_gap.setSingleStep(0.01)
+        self.max_gap.setDecimals(2)
+        self.max_gap.setSuffix(" s")
+        g.addWidget(_lbl("Max Gap:"), 3, 0)
+        g.addWidget(self.max_gap, 3, 1)
 
         self.ignore_time = QDoubleSpinBox()
-        self.ignore_time.setRange(0.0, 10.0); self.ignore_time.setSingleStep(0.1); self.ignore_time.setDecimals(1); self.ignore_time.setSuffix(" s")
-        _row(g, 2, "Ignore Time:", self.ignore_time, col=0)
+        self.ignore_time.setRange(0.0, 10.0)
+        self.ignore_time.setSingleStep(0.1)
+        self.ignore_time.setDecimals(1)
+        self.ignore_time.setSuffix(" s")
+        g.addWidget(_lbl("Ignore Time:"), 4, 0)
+        g.addWidget(self.ignore_time, 4, 1)
 
-        self.event_padding = QDoubleSpinBox()
-        self.event_padding.setRange(0.0, 2.0); self.event_padding.setSingleStep(0.1); self.event_padding.setDecimals(2); self.event_padding.setSuffix(" s")
-        _row(g, 2, "Event Padding:", self.event_padding, col=2)
         return grp
 
     def _group_noise_reduction(self):
-        grp = QGroupBox("🔄  NOISE REDUCTION  (live — no restart needed)")
-        g = _make_grid(grp)
+        grp = QGroupBox("🔄 NOISE REDUCTION")
+        g = QGridLayout(grp)
+        g.setSpacing(8)
+        g.setContentsMargins(12, 12, 12, 12)
 
         self.prop_decrease = QDoubleSpinBox()
-        self.prop_decrease.setRange(0.0, 1.0); self.prop_decrease.setSingleStep(0.1); self.prop_decrease.setDecimals(1)
-        _row(g, 0, "Prop. Decrease:", self.prop_decrease, col=0)
+        self.prop_decrease.setRange(0.0, 1.0)
+        self.prop_decrease.setSingleStep(0.1)
+        self.prop_decrease.setDecimals(1)
+        g.addWidget(_lbl("Prop. Decrease:"), 0, 0)
+        g.addWidget(self.prop_decrease, 0, 1)
 
         self.normalization_percentile = QDoubleSpinBox()
-        self.normalization_percentile.setRange(0.1, 100.0); self.normalization_percentile.setSingleStep(0.1); self.normalization_percentile.setDecimals(1); self.normalization_percentile.setSuffix(" %")
-        _row(g, 0, "Norm. Percentile:", self.normalization_percentile, col=2)
+        self.normalization_percentile.setRange(0.1, 100.0)
+        self.normalization_percentile.setSingleStep(0.1)
+        self.normalization_percentile.setDecimals(1)
+        self.normalization_percentile.setSuffix(" %")
+        g.addWidget(_lbl("Norm. Percentile:"), 1, 0)
+        g.addWidget(self.normalization_percentile, 1, 1)
 
         self.stationary = QCheckBox("Stationary noise mode")
-        _row(g, 1, "Stationary:", self.stationary, col=0)
+        g.addWidget(_lbl("Stationary:"), 2, 0)
+        g.addWidget(self.stationary, 2, 1)
 
         self.normalize = QCheckBox("Normalize output audio")
-        _row(g, 1, "Normalize:", self.normalize, col=2)
+        g.addWidget(_lbl("Normalize:"), 3, 0)
+        g.addWidget(self.normalize, 3, 1)
 
         self.freq_mask_smooth_hz = QSpinBox()
-        self.freq_mask_smooth_hz.setRange(10, 2000); self.freq_mask_smooth_hz.setSingleStep(10); self.freq_mask_smooth_hz.setSuffix(" Hz")
-        _row(g, 2, "Freq Mask Smooth:", self.freq_mask_smooth_hz, col=0)
+        self.freq_mask_smooth_hz.setRange(10, 2000)
+        self.freq_mask_smooth_hz.setSingleStep(10)
+        self.freq_mask_smooth_hz.setSuffix(" Hz")
+        g.addWidget(_lbl("Freq Mask Smooth:"), 4, 0)
+        g.addWidget(self.freq_mask_smooth_hz, 4, 1)
 
         self.time_mask_smooth_ms = QSpinBox()
-        self.time_mask_smooth_ms.setRange(1, 200); self.time_mask_smooth_ms.setSingleStep(5); self.time_mask_smooth_ms.setSuffix(" ms")
-        _row(g, 2, "Time Mask Smooth:", self.time_mask_smooth_ms, col=2)
+        self.time_mask_smooth_ms.setRange(1, 200)
+        self.time_mask_smooth_ms.setSingleStep(5)
+        self.time_mask_smooth_ms.setSuffix(" ms")
+        g.addWidget(_lbl("Time Mask Smooth:"), 5, 0)
+        g.addWidget(self.time_mask_smooth_ms, 5, 1)
+
         return grp
 
     def _group_tdoa(self):
-        grp = QGroupBox("🔒  TDOA / GCC-PHAT  (restart required)")
-        g = _make_grid(grp)
+        grp = QGroupBox("🔒 TDOA / GCC-PHAT")
+        g = QGridLayout(grp)
+        g.setSpacing(8)
+        g.setContentsMargins(12, 12, 12, 12)
 
         self.is_gcc_phat = QCheckBox("Enable GCC-PHAT algorithm")
-        _row(g, 0, "GCC-PHAT:", self.is_gcc_phat, col=0, restart=True)
+        g.addWidget(_lbl("GCC-PHAT:", restart=True), 0, 0)
+        g.addWidget(self.is_gcc_phat, 0, 1)
 
         self.hop_length = QSpinBox()
-        self.hop_length.setRange(64, 4096); self.hop_length.setSingleStep(64)
-        _row(g, 0, "Hop Length:", self.hop_length, col=2)
+        self.hop_length.setRange(64, 4096)
+        self.hop_length.setSingleStep(64)
+        g.addWidget(_lbl("Hop Length:"), 1, 0)
+        g.addWidget(self.hop_length, 1, 1)
 
         self.frame_length = QSpinBox()
-        self.frame_length.setRange(128, 8192); self.frame_length.setSingleStep(128)
-        _row(g, 1, "Frame Length:", self.frame_length, col=0)
+        self.frame_length.setRange(128, 8192)
+        self.frame_length.setSingleStep(128)
+        g.addWidget(_lbl("Frame Length:"), 2, 0)
+        g.addWidget(self.frame_length, 2, 1)
+
         return grp
 
     def _group_timing(self):
-        grp = QGroupBox("🔄  TIMING / DELAYS  (live — no restart needed)")
-        g = _make_grid(grp)
+        grp = QGroupBox("🔄 TIMING / DELAYS")
+        g = QGridLayout(grp)
+        g.setSpacing(8)
+        g.setContentsMargins(12, 12, 12, 12)
+
+        self.event_padding = QDoubleSpinBox()
+        self.event_padding.setRange(0.0, 2.0)
+        self.event_padding.setSingleStep(0.1)
+        self.event_padding.setDecimals(2)
+        self.event_padding.setSuffix(" s")
+        g.addWidget(_lbl("Event Padding:"), 0, 0)
+        g.addWidget(self.event_padding, 0, 1)
 
         self.post_recording_delay = QDoubleSpinBox()
-        self.post_recording_delay.setRange(0.0, 10.0); self.post_recording_delay.setSingleStep(0.1); self.post_recording_delay.setDecimals(1); self.post_recording_delay.setSuffix(" s")
-        _row(g, 0, "Post-Rec Delay:", self.post_recording_delay, col=0)
+        self.post_recording_delay.setRange(0.0, 10.0)
+        self.post_recording_delay.setSingleStep(0.1)
+        self.post_recording_delay.setDecimals(1)
+        self.post_recording_delay.setSuffix(" s")
+        g.addWidget(_lbl("Post-Rec Delay:"), 1, 0)
+        g.addWidget(self.post_recording_delay, 1, 1)
 
         self.main_loop_delay = QDoubleSpinBox()
-        self.main_loop_delay.setRange(0.01, 5.0); self.main_loop_delay.setSingleStep(0.05); self.main_loop_delay.setDecimals(2); self.main_loop_delay.setSuffix(" s")
-        _row(g, 0, "Main Loop Delay:", self.main_loop_delay, col=2)
+        self.main_loop_delay.setRange(0.01, 5.0)
+        self.main_loop_delay.setSingleStep(0.05)
+        self.main_loop_delay.setDecimals(2)
+        self.main_loop_delay.setSuffix(" s")
+        g.addWidget(_lbl("Main Loop Delay:"), 2, 0)
+        g.addWidget(self.main_loop_delay, 2, 1)
+
         return grp
 
     def _group_output_files(self):
-        grp = QGroupBox("🔒  SERIAL & OUTPUT FILES  (restart required)")
-        g = _make_grid(grp)
+        grp = QGroupBox("🔒 SERIAL & OUTPUT FILES")
+        g = QGridLayout(grp)
+        g.setSpacing(8)
+        g.setContentsMargins(12, 12, 12, 12)
 
         self.serial_port = QLineEdit()
         self.serial_port.setPlaceholderText("/dev/ttyUSB0")
-        _row(g, 0, "Serial Port:", self.serial_port, col=0, restart=True)
+        g.addWidget(_lbl("Serial Port:", restart=True), 0, 0)
+        g.addWidget(self.serial_port, 0, 1)
 
         self.baud_rate = QComboBox()
         self.baud_rate.addItems(["9600", "19200", "38400", "57600", "115200", "230400"])
-        _row(g, 0, "Baud Rate:", self.baud_rate, col=2, restart=True)
+        g.addWidget(_lbl("Baud Rate:", restart=True), 1, 0)
+        g.addWidget(self.baud_rate, 1, 1)
 
         self.serial_timeout = QDoubleSpinBox()
-        self.serial_timeout.setRange(1.0, 30.0); self.serial_timeout.setSuffix(" s")
-        _row(g, 1, "Serial Timeout:", self.serial_timeout, col=0, restart=True)
+        self.serial_timeout.setRange(1.0, 30.0)
+        self.serial_timeout.setSuffix(" s")
+        g.addWidget(_lbl("Serial Timeout:", restart=True), 2, 0)
+        g.addWidget(self.serial_timeout, 2, 1)
 
-        self.events_csv = QLineEdit(); self.events_csv.setPlaceholderText("detected_events.csv")
-        _row(g, 1, "Events CSV:", self.events_csv, col=2, restart=True)
+        self.events_csv = QLineEdit()
+        self.events_csv.setPlaceholderText("detected_events.csv")
+        g.addWidget(_lbl("Events CSV:", restart=True), 3, 0)
+        g.addWidget(self.events_csv, 3, 1)
 
-        self.events_json = QLineEdit(); self.events_json.setPlaceholderText("session_events.json")
-        _row(g, 2, "Events JSON:", self.events_json, col=2, restart=True)
+        self.events_json = QLineEdit()
+        self.events_json.setPlaceholderText("session_events.json")
+        g.addWidget(_lbl("Events JSON:", restart=True), 4, 0)
+        g.addWidget(self.events_json, 4, 1)
 
-        self.tdoa_json = QLineEdit(); self.tdoa_json.setPlaceholderText("session_tdoa.json")
-        _row(g, 3, "TDOA JSON:", self.tdoa_json, col=0, restart=True)
+        self.tdoa_json = QLineEdit()
+        self.tdoa_json.setPlaceholderText("session_tdoa.json")
+        g.addWidget(_lbl("TDOA JSON:", restart=True), 5, 0)
+        g.addWidget(self.tdoa_json, 5, 1)
+
         return grp
 
     def _action_buttons(self):
         row = QHBoxLayout()
         row.setSpacing(8)
-        save_btn = QPushButton("SAVE CONFIG")
+        save_btn = QPushButton("💾 SAVE CONFIG")
         save_btn.setObjectName("btnSave")
         save_btn.clicked.connect(self._save)
         row.addWidget(save_btn)
 
-        reset_btn = QPushButton("RESET DEFAULTS")
+        reset_btn = QPushButton("↺ RESET DEFAULTS")
         reset_btn.setObjectName("btnReset")
         reset_btn.clicked.connect(self._reset)
         row.addWidget(reset_btn)
         row.addStretch()
         return row
 
-    # ── Data ────────────────────────────────────────────────────────────
-
+    # ── Data methods (sama seperti sebelumnya, tidak berubah) ──
     def set_config(self, cfg: dict):
-        """Populate UI from a config dictionary (e.g. from REST API)."""
         merged = dict(self._DEFAULTS)
         merged.update(cfg)
         self.current_config = merged
@@ -371,50 +456,46 @@ class RaspiConfigPanel(QWidget):
         self.normalization_percentile.setValue(c.get("normalization_percentile", 99.9))
         self.post_recording_delay.setValue(c.get("post_recording_delay", 0.5))
         self.main_loop_delay.setValue(c.get("main_loop_delay", 0.1))
-        
-        # Hide restart banner if we're synced with remote
+
         self._restart_banner.setVisible(False)
 
     def _get_values_from_ui(self) -> dict:
         return {
-            "operation_mode":            self.operation_mode.currentText(),
-            "active_profile":            self.active_profile.currentText(),
-            "base_output_dir":           self.base_output_dir.text(),
-            "sample_rate":               int(self.sample_rate.currentText()),
-            "num_mics_h8":               self.num_mics_h8.value(),
-            "arecord_device":            self.arecord_device.text(),
+            "operation_mode": self.operation_mode.currentText(),
+            "active_profile": self.active_profile.currentText(),
+            "base_output_dir": self.base_output_dir.text(),
+            "sample_rate": int(self.sample_rate.currentText()),
+            "num_mics_h8": self.num_mics_h8.value(),
+            "arecord_device": self.arecord_device.text(),
             "arecord_terminate_timeout": self.arecord_terminate_timeout.value(),
-            "is_gcc_phat":               self.is_gcc_phat.isChecked(),
-            "serial_port":               self.serial_port.text(),
-            "baud_rate":                 int(self.baud_rate.currentText()),
-            "serial_timeout":            self.serial_timeout.value(),
-            "events_csv":                self.events_csv.text(),
-            "events_json":               self.events_json.text(),
-            "tdoa_json":                 self.tdoa_json.text(),
-            "detect_ratio":              self.detect_ratio.value(),
-            "filter_ratio":              self.filter_ratio.value(),
-            "min_duration":              self.min_duration.value(),
-            "max_gap":                   self.max_gap.value(),
-            "ignore_time":               self.ignore_time.value(),
-            "event_padding_sec":         self.event_padding.value(),
-            "prop_decrease":             self.prop_decrease.value(),
-            "stationary":                self.stationary.isChecked(),
-            "normalize":                 self.normalize.isChecked(),
-            "freq_mask_smooth_hz":       self.freq_mask_smooth_hz.value(),
-            "time_mask_smooth_ms":       self.time_mask_smooth_ms.value(),
-            "hop_length":                self.hop_length.value(),
-            "frame_length":              self.frame_length.value(),
-            "normalization_percentile":  self.normalization_percentile.value(),
-            "post_recording_delay":      self.post_recording_delay.value(),
-            "main_loop_delay":           self.main_loop_delay.value(),
+            "is_gcc_phat": self.is_gcc_phat.isChecked(),
+            "serial_port": self.serial_port.text(),
+            "baud_rate": int(self.baud_rate.currentText()),
+            "serial_timeout": self.serial_timeout.value(),
+            "events_csv": self.events_csv.text(),
+            "events_json": self.events_json.text(),
+            "tdoa_json": self.tdoa_json.text(),
+            "detect_ratio": self.detect_ratio.value(),
+            "filter_ratio": self.filter_ratio.value(),
+            "min_duration": self.min_duration.value(),
+            "max_gap": self.max_gap.value(),
+            "ignore_time": self.ignore_time.value(),
+            "event_padding_sec": self.event_padding.value(),
+            "prop_decrease": self.prop_decrease.value(),
+            "stationary": self.stationary.isChecked(),
+            "normalize": self.normalize.isChecked(),
+            "freq_mask_smooth_hz": self.freq_mask_smooth_hz.value(),
+            "time_mask_smooth_ms": self.time_mask_smooth_ms.value(),
+            "hop_length": self.hop_length.value(),
+            "frame_length": self.frame_length.value(),
+            "normalization_percentile": self.normalization_percentile.value(),
+            "post_recording_delay": self.post_recording_delay.value(),
+            "main_loop_delay": self.main_loop_delay.value(),
         }
 
     def get_runtime_config(self) -> dict:
-        """Return only 🔄 runtime params (safe to send via SET_CONFIG serial)."""
         all_cfg = self._get_values_from_ui()
         return {k: v for k, v in all_cfg.items() if k not in _RESTART_REQUIRED}
-
-    # ── Validation ──────────────────────────────────────────────────────
 
     def _validate(self, cfg: dict) -> str | None:
         if cfg["filter_ratio"] < cfg["detect_ratio"]:
@@ -429,8 +510,6 @@ class RaspiConfigPanel(QWidget):
             return "num_mics_h8 must be 4 or 6"
         return None
 
-    # ── Slots ────────────────────────────────────────────────────────────
-
     def _save(self):
         cfg = self._get_values_from_ui()
         err = self._validate(cfg)
@@ -441,8 +520,7 @@ class RaspiConfigPanel(QWidget):
         if cfg.get("baud_rate") != self.current_config.get("baud_rate"):
             QMessageBox.warning(
                 self, "Baud Rate Changed",
-                "⚠ baud_rate changed on drone.\n"
-                "Make sure Ground Station baud_rate matches!"
+                "⚠ baud_rate changed on drone.\nMake sure Ground Station baud_rate matches!"
             )
 
         restart_params = [
@@ -454,8 +532,10 @@ class RaspiConfigPanel(QWidget):
         self.config_save_requested.emit(cfg)
 
         if restart_params:
-            names = ", ".join(restart_params)
-            self._restart_msg.setText(f"⚠ Parameters changed that require restart: {names}")
+            names = ", ".join(restart_params[:3])
+            if len(restart_params) > 3:
+                names += f" +{len(restart_params)-3} more"
+            self._restart_msg.setText(f"⚠ Restart required: {names}")
             self._restart_banner.setVisible(True)
         else:
             self._restart_banner.setVisible(False)

@@ -1,22 +1,20 @@
 # darat/ui/widgets/status_panel.py
-from PyQt6.QtWidgets import QWidget, QGridLayout, QLabel, QFrame, QVBoxLayout
+"""Compact live device-status — 1 row horizontal layout."""
+
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QFrame, QLabel, QVBoxLayout
 from PyQt6.QtCore import Qt
 
 
 class StatusPanel(QWidget):
-    """Compact live device-status grid (2 rows × 3 cols).
-
-    Call ``update_status(dict)`` to push new values. Expected keys:
-        zoom, raspi, sdr, mic_count, last_detection, session
-    """
+    """Compact live device-status strip (1 row, 6 cards)."""
 
     _ITEMS = [
-        ("ZOOM CAM",     "zoom",           0, 0),
-        ("RASPBERRY PI", "raspi",          0, 1),
-        ("SDR RADIO",    "sdr",            0, 2),
-        ("MICS ACTIVE",  "mic_count",      1, 0),
-        ("LAST HIT",     "last_detection", 1, 1),
-        ("SESSION",      "session",        1, 2),
+        ("ZOOM", "zoom"),
+        ("RASPI", "raspi"),
+        ("SDR", "sdr"),
+        ("MICS", "mic_count"),
+        ("HIT", "last_detection"),
+        ("SESSION", "session"),
     ]
 
     def __init__(self, parent=None):
@@ -25,29 +23,40 @@ class StatusPanel(QWidget):
         self._build_ui()
 
     def _build_ui(self):
-        grid = QGridLayout(self)
-        grid.setSpacing(6)
-        grid.setContentsMargins(0, 0, 0, 0)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 4, 0, 4)
+        layout.setSpacing(2)
 
-        for heading_text, key, row, col in self._ITEMS:
-            cell = QFrame()
-            cell.setObjectName("card")
+        for heading_text, key in self._ITEMS:
+            card = QFrame()
+            card.setObjectName("statusCard")
+            card.setFixedHeight(44)
+            card.setStyleSheet("""
+                QFrame#statusCard {
+                    background-color: #f8fafc;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 6px;
+                }
+            """)
 
-            cell_layout = QVBoxLayout(cell)
-            cell_layout.setSpacing(2)
-            cell_layout.setContentsMargins(8, 6, 8, 6)
+            card_layout = QHBoxLayout(card)
+            card_layout.setContentsMargins(8, 4, 8, 4)
+            card_layout.setSpacing(6)
 
             heading = QLabel(heading_text)
             heading.setObjectName("statusHeading")
+            heading.setStyleSheet("font-size:9px; font-weight:bold; color:#475569;")
             heading.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            cell_layout.addWidget(heading)
+            card_layout.addWidget(heading)
 
             value = QLabel("—")
             value.setObjectName("statusValue")
+            value.setStyleSheet("font-size:11px; font-weight:bold; color:#1e293b;")
             value.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            cell_layout.addWidget(value)
+            value.setMinimumWidth(40)
+            card_layout.addWidget(value)
 
-            grid.addWidget(cell, row, col)
+            layout.addWidget(card, stretch=1)
             self._value_labels[key] = value
 
     def update_status(self, status: dict):

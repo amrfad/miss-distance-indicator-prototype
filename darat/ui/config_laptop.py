@@ -5,42 +5,40 @@ Acts purely as a UI view. Reads and writes are handled via signals and REST API.
 """
 
 from PyQt6.QtWidgets import (
-    QWidget, QGroupBox, QFormLayout, QVBoxLayout,
-    QHBoxLayout, QLineEdit, QComboBox,
-    QSpinBox, QDoubleSpinBox, QPushButton,
-    QCheckBox, QMessageBox, QLabel,
-    QGridLayout, QScrollArea, QFrame,
+    QWidget, QGroupBox, QFormLayout, QVBoxLayout, QHBoxLayout,
+    QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPushButton,
+    QCheckBox, QMessageBox, QLabel, QGridLayout, QScrollArea, QFrame,
 )
 from PyQt6.QtCore import pyqtSignal, Qt
 
 _DEFAULT_MIC_POSITIONS = {
-    "mic0": {"x": -1.58, "y":  0.77, "z":  0.09},
-    "mic1": {"x":  1.60, "y":  0.77, "z":  0.09},
+    "mic0": {"x": -1.58, "y": 0.77, "z": 0.09},
+    "mic1": {"x": 1.60, "y": 0.77, "z": 0.09},
     "mic2": {"x": -0.59, "y": -0.92, "z": -0.07},
-    "mic3": {"x":  0.59, "y": -0.92, "z": -0.05},
+    "mic3": {"x": 0.59, "y": -0.92, "z": -0.05},
     "mic4": {"x": -0.50, "y": -0.11, "z": -0.16},
-    "mic5": {"x":  0.13, "y": -0.01, "z": -0.17},
+    "mic5": {"x": 0.13, "y": -0.01, "z": -0.17},
 }
 
 
 class LaptopConfigPanel(QWidget):
-    """Configuration panel for the Ground Station (laptop/PC)."""
+    """Configuration panel for the Ground Station (laptop/PC) — 2 column layout."""
 
-    config_save_requested  = pyqtSignal(dict)
+    config_save_requested = pyqtSignal(dict)
     config_reset_requested = pyqtSignal()
 
     _DEFAULTS = {
-        "serial_port":       "COM3",
-        "baud_rate":         230400,
-        "serial_timeout":    1.0,
-        "use_tcp":           False,
-        "raspi_ip":          "192.168.1.100",
-        "tcp_port":          5000,
-        "speed_of_sound":    343.0,
-        "cluster_eps":       1.0,
+        "serial_port": "COM3",
+        "baud_rate": 230400,
+        "serial_timeout": 1.0,
+        "use_tcp": False,
+        "raspi_ip": "192.168.1.100",
+        "tcp_port": 5000,
+        "speed_of_sound": 343.0,
+        "cluster_eps": 1.0,
         "update_interval_s": 0.1,
-        "plot_buffer_size":  1000,
-        "mic_positions":     _DEFAULT_MIC_POSITIONS,
+        "plot_buffer_size": 1000,
+        "mic_positions": _DEFAULT_MIC_POSITIONS,
     }
 
     def __init__(self, parent=None):
@@ -53,14 +51,6 @@ class LaptopConfigPanel(QWidget):
         self._build_ui()
         self.set_config(self.current_config)
 
-    def _make_form(self, parent: QGroupBox) -> QFormLayout:
-        form = QFormLayout(parent)
-        form.setSpacing(8)
-        form.setContentsMargins(10, 6, 10, 10)
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
-        return form
-
     def _build_ui(self):
         scroll = QScrollArea(self)
         scroll.setWidgetResizable(True)
@@ -71,11 +61,32 @@ class LaptopConfigPanel(QWidget):
         outer.setContentsMargins(8, 8, 8, 8)
         outer.setSpacing(10)
 
-        outer.addWidget(self._group_serial())
-        outer.addWidget(self._group_network())
-        outer.addWidget(self._group_processing())
-        outer.addWidget(self._group_visualization())
+        # === 2 COLUMN LAYOUT ===
+        columns_layout = QHBoxLayout()
+        columns_layout.setSpacing(20)
+
+        # Column 1
+        col1 = QVBoxLayout()
+        col1.setSpacing(10)
+        col1.addWidget(self._group_serial())
+        col1.addWidget(self._group_processing())
+        col1.addStretch()
+
+        # Column 2
+        col2 = QVBoxLayout()
+        col2.setSpacing(10)
+        col2.addWidget(self._group_network())
+        col2.addWidget(self._group_visualization())
+        col2.addStretch()
+
+        columns_layout.addLayout(col1, stretch=1)
+        columns_layout.addLayout(col2, stretch=1)
+
+        outer.addLayout(columns_layout)
+        
+        # MIC POSITIONS (full width, di bawah kedua kolom)
         outer.addWidget(self._group_mic_positions())
+        
         outer.addLayout(self._action_buttons())
         outer.addStretch()
 
@@ -84,8 +95,16 @@ class LaptopConfigPanel(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.addWidget(scroll)
 
+    def _make_form(self, parent: QGroupBox) -> QFormLayout:
+        form = QFormLayout(parent)
+        form.setSpacing(8)
+        form.setContentsMargins(12, 12, 12, 12)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        return form
+
     def _group_serial(self):
-        grp = QGroupBox("SERIAL COMMUNICATION")
+        grp = QGroupBox("🔌 SERIAL COMMUNICATION")
         form = self._make_form(grp)
 
         self.serial_port = QLineEdit()
@@ -97,7 +116,7 @@ class LaptopConfigPanel(QWidget):
         form.addRow("Baud Rate:", self.baud_rate)
 
         baud_warn = QLabel("⚠ Must match Raspberry Pi baud rate")
-        baud_warn.setStyleSheet("color: #d97706; font-size: 10px;")
+        baud_warn.setStyleSheet("color: #d97706; font-size: 10px; margin-left: 8px;")
         form.addRow("", baud_warn)
 
         self.serial_timeout = QDoubleSpinBox()
@@ -105,10 +124,11 @@ class LaptopConfigPanel(QWidget):
         self.serial_timeout.setSingleStep(0.1)
         self.serial_timeout.setSuffix(" s")
         form.addRow("Timeout:", self.serial_timeout)
+
         return grp
 
     def _group_network(self):
-        grp = QGroupBox("NETWORK / TCP (ALTERNATIVE)")
+        grp = QGroupBox("🌐 NETWORK / TCP (ALTERNATIVE)")
         form = self._make_form(grp)
 
         self.use_tcp = QCheckBox("Use TCP socket instead of serial port")
@@ -121,10 +141,11 @@ class LaptopConfigPanel(QWidget):
         self.tcp_port = QSpinBox()
         self.tcp_port.setRange(1024, 65535)
         form.addRow("TCP Port:", self.tcp_port)
+
         return grp
 
     def _group_processing(self):
-        grp = QGroupBox("PROCESSING PARAMETERS")
+        grp = QGroupBox("⚙ PROCESSING PARAMETERS")
         form = self._make_form(grp)
 
         self.speed_of_sound = QDoubleSpinBox()
@@ -141,10 +162,11 @@ class LaptopConfigPanel(QWidget):
         self.cluster_eps.setSuffix(" m")
         self.cluster_eps.setToolTip("Bucher-Misra cluster grouping threshold (CLUSTER_EPS)")
         form.addRow("Cluster EPS:", self.cluster_eps)
+
         return grp
 
     def _group_visualization(self):
-        grp = QGroupBox("VISUALIZATION SETTINGS")
+        grp = QGroupBox("📊 VISUALIZATION SETTINGS")
         form = self._make_form(grp)
 
         self.update_interval = QDoubleSpinBox()
@@ -158,74 +180,89 @@ class LaptopConfigPanel(QWidget):
         self.plot_buffer_size.setRange(100, 20000)
         self.plot_buffer_size.setSingleStep(100)
         form.addRow("Plot Buffer Size:", self.plot_buffer_size)
+
         return grp
 
     def _group_mic_positions(self):
-        grp = QGroupBox("MICROPHONE POSITIONS  (3D coordinates in meters)")
+        grp = QGroupBox("🎤 MICROPHONE POSITIONS (3D coordinates in meters)")
         outer = QVBoxLayout(grp)
-        outer.setContentsMargins(10, 8, 10, 10)
-        outer.setSpacing(6)
+        outer.setContentsMargins(12, 12, 12, 12)
+        outer.setSpacing(8)
 
-        header = QGridLayout()
+        # Header tabel
+        header = QHBoxLayout()
         header.setSpacing(4)
-        for col_idx, text in enumerate(["", "X (m)", "Y (m)", "Z (m)"]):
+        for text in ["", "X (m)", "Y (m)", "Z (m)"]:
             lbl = QLabel(text)
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             lbl.setStyleSheet("font-size:10px; font-weight:bold; color:#475569;")
-            header.addWidget(lbl, 0, col_idx)
+            if text == "":
+                lbl.setFixedWidth(50)
+            else:
+                lbl.setFixedWidth(80)
+            header.addWidget(lbl)
         outer.addLayout(header)
 
+        # Grid 6 baris × 3 kolom input
         grid = QGridLayout()
         grid.setSpacing(4)
-        for row, mic_key in enumerate(f"mic{i}" for i in range(6)):
-            lbl = QLabel(mic_key)
+        grid.setHorizontalSpacing(8)
+
+        for row in range(6):
+            mic_key = f"mic{row}"
+            
+            # Label mic
+            lbl = QLabel(mic_key.upper())
             lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            lbl.setStyleSheet("font-size:11px; font-weight:bold; color:#2563eb; min-width:36px;")
+            lbl.setStyleSheet("font-size:11px; font-weight:bold; color:#2563eb; min-width:50px;")
             grid.addWidget(lbl, row, 0)
 
-            for col_idx, axis in enumerate(["x", "y", "z"]):
+            for col, axis in enumerate(["x", "y", "z"]):
                 sb = QDoubleSpinBox()
-                sb.setRange(-20.0, 20.0)
+                sb.setRange(-5.0, 5.0)
                 sb.setSingleStep(0.01)
                 sb.setDecimals(3)
                 sb.setSuffix(" m")
+                sb.setMinimumWidth(90)
                 sb.setToolTip(f"{mic_key} {axis.upper()} position")
-                grid.addWidget(sb, row, col_idx + 1)
+                grid.addWidget(sb, row, col + 1)
                 self._mic_spinboxes[f"{mic_key}_{axis}"] = sb
 
         outer.addLayout(grid)
 
-        reset_mic_btn = QPushButton("Reset Mic Positions to Default")
+        # Tombol reset mic
+        reset_mic_btn = QPushButton("↺ Reset Mic Positions to Default")
         reset_mic_btn.setObjectName("btnReset")
+        reset_mic_btn.setFixedHeight(30)
         reset_mic_btn.clicked.connect(self._reset_mic_positions)
-        outer.addWidget(reset_mic_btn)
+        outer.addWidget(reset_mic_btn, alignment=Qt.AlignmentFlag.AlignRight)
+
         return grp
 
     def _action_buttons(self):
         row = QHBoxLayout()
         row.setSpacing(8)
-        save_btn = QPushButton("SAVE CONFIG")
+        save_btn = QPushButton("💾 SAVE CONFIG")
         save_btn.setObjectName("btnSave")
         save_btn.clicked.connect(self._save)
         row.addWidget(save_btn)
 
-        reset_btn = QPushButton("RESET DEFAULTS")
+        reset_btn = QPushButton("↺ RESET DEFAULTS")
         reset_btn.setObjectName("btnReset")
         reset_btn.clicked.connect(self._reset)
         row.addWidget(reset_btn)
         row.addStretch()
         return row
 
-    # ── Data ────────────────────────────────────────────────────────────
+    # ── Data methods ──────────────────────────────────────────────────────
 
     def set_config(self, cfg: dict):
         """Populate UI from a config dictionary (e.g. from REST API)."""
-        # Merge with defaults to ensure all keys exist
         merged = dict(self._DEFAULTS)
         merged["mic_positions"] = {k: dict(v) for k, v in _DEFAULT_MIC_POSITIONS.items()}
         merged.update(cfg)
-        
-        # Handle backend's potential legacy key (if needed)
+
+        # Handle backend's potential legacy key
         if "update_interval_ms" in merged and "update_interval_s" not in merged:
             merged["update_interval_s"] = merged.pop("update_interval_ms") / 1000.0
 
@@ -253,17 +290,17 @@ class LaptopConfigPanel(QWidget):
 
     def _get_values_from_ui(self) -> dict:
         return {
-            "serial_port":       self.serial_port.text(),
-            "baud_rate":         int(self.baud_rate.currentText()),
-            "serial_timeout":    self.serial_timeout.value(),
-            "use_tcp":           self.use_tcp.isChecked(),
-            "raspi_ip":          self.raspi_ip.text(),
-            "tcp_port":          self.tcp_port.value(),
-            "speed_of_sound":    self.speed_of_sound.value(),
-            "cluster_eps":       self.cluster_eps.value(),
+            "serial_port": self.serial_port.text(),
+            "baud_rate": int(self.baud_rate.currentText()),
+            "serial_timeout": self.serial_timeout.value(),
+            "use_tcp": self.use_tcp.isChecked(),
+            "raspi_ip": self.raspi_ip.text(),
+            "tcp_port": self.tcp_port.value(),
+            "speed_of_sound": self.speed_of_sound.value(),
+            "cluster_eps": self.cluster_eps.value(),
             "update_interval_s": self.update_interval.value(),
-            "plot_buffer_size":  self.plot_buffer_size.value(),
-            "mic_positions":     self._get_mic_positions_from_ui(),
+            "plot_buffer_size": self.plot_buffer_size.value(),
+            "mic_positions": self._get_mic_positions_from_ui(),
         }
 
     def _get_mic_positions_from_ui(self) -> dict:
@@ -276,11 +313,10 @@ class LaptopConfigPanel(QWidget):
             }
         return positions
 
-    # ── Slots ────────────────────────────────────────────────────────────
+    # ── Slots ─────────────────────────────────────────────────────────────
 
     def _save(self):
         cfg = self._get_values_from_ui()
-        # Immediately save it locally as UI state pending server confirmation
         self.current_config = cfg
         self.config_save_requested.emit(cfg)
 

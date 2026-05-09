@@ -6,8 +6,9 @@ import json
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
     QFrame, QTextEdit, QPushButton, QLabel, QMessageBox,
+    QDialog,  # tambah ini untuk modal dialog
 )
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import pyqtSignal, Qt  # ← TAMBAHKAN Qt di sini
 
 from ..config_raspi import RaspiConfigPanel
 from ..config_laptop import LaptopConfigPanel
@@ -44,45 +45,93 @@ class ConfigPage(QWidget):
 
         # Sub-tabs
         tabs = QTabWidget()
-        self.raspi_config  = RaspiConfigPanel()
+        self.raspi_config = RaspiConfigPanel()
         self.laptop_config = LaptopConfigPanel()
-        tabs.addTab(self.raspi_config,  "  🔒 RASPBERRY PI  ")
+        tabs.addTab(self.raspi_config, "  🔒 RASPBERRY PI  ")
         tabs.addTab(self.laptop_config, "  🖥 GROUND STATION  ")
 
         self._tabs = tabs
         root.addWidget(tabs, stretch=3)
 
-        # Config preview panel
-        root.addWidget(self._build_preview_panel(), stretch=1)
+        # Config preview panel (as button + modal)
+        root.addWidget(self._build_preview_panel(), stretch=0)
 
     def _build_preview_panel(self) -> QFrame:
+        """Build config preview as a button that opens modal dialog."""
         frame = QFrame()
         frame.setObjectName("card")
+        frame.setStyleSheet("QFrame#card { background: transparent; border: none; }")
 
-        layout = QVBoxLayout(frame)
-        layout.setContentsMargins(10, 8, 10, 10)
-        layout.setSpacing(6)
+        layout = QHBoxLayout(frame)
+        layout.setContentsMargins(0, 8, 0, 8)
+        layout.setSpacing(10)
 
-        header = QHBoxLayout()
-        title = QLabel("CONFIG PREVIEW (JSON)")
-        title.setObjectName("sectionTitle")
-        header.addWidget(title)
-        header.addStretch()
+        # Tombol preview
+        self._preview_btn = QPushButton("👁  PREVIEW CONFIG (JSON)")
+        self._preview_btn.setObjectName("btnSecondary")
+        self._preview_btn.setFixedHeight(32)
+        self._preview_btn.setCursor(Qt.CursorShape.PointingHandCursor)  # ← sekarang Qt sudah di-import
+        self._preview_btn.clicked.connect(self._show_preview_dialog)
+        layout.addWidget(self._preview_btn)
 
-        refresh_btn = QPushButton("↻")
-        refresh_btn.setFixedSize(26, 26)
-        refresh_btn.setToolTip("Refresh preview")
-        refresh_btn.clicked.connect(self._refresh_preview)
-        header.addWidget(refresh_btn)
-        layout.addLayout(header)
+        layout.addStretch()
 
-        self._preview = QTextEdit()
-        self._preview.setObjectName("logConsole")
-        self._preview.setReadOnly(True)
-        self._preview.setPlaceholderText("// config preview will appear here...")
-        self._preview.setMaximumHeight(160)
-        layout.addWidget(self._preview)
+        # Restart drone button (pindah ke sini biar lebih rapi)
+        self._restart_drone_btn = QPushButton("⚠ RESTART DRONE")
+        self._restart_drone_btn.setObjectName("btnReset")
+        self._restart_drone_btn.setFixedHeight(32)
+        self._restart_drone_btn.clicked.connect(self.restart_requested.emit)
+        layout.addWidget(self._restart_drone_btn)
+
         return frame
+
+    def _show_preview_dialog(self):
+        """Open modal dialog with JSON config preview."""
+        from PyQt6.QtWidgets import QTextEdit, QVBoxLayout, QPushButton, QHBoxLayout
+        import json
+
+        active_tab = self._tabs.currentIndex()
+        if active_tab == 0:
+            cfg = self.raspi_config._get_values_from_ui()
+            title = "Raspberry Pi Config Preview"
+        else:
+            cfg = self.laptop_config._get_values_from_ui()
+            title = "Ground Station Config Preview"
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle(title)
+        dialog.setMinimumSize(500, 400)
+        dialog.setModal(True)
+
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(10)
+
+        text_edit = QTextEdit()
+        text_edit.setFontFamily("Courier New")
+        text_edit.setPlainText(json.dumps(cfg, indent=2))
+        text_edit.setReadOnly(True)
+        layout.addWidget(text_edit)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+
+        copy_btn = QPushButton("📋 COPY TO CLIPBOARD")
+        copy_btn.clicked.connect(lambda: self._copy_json_to_clipboard(cfg))
+        btn_layout.addWidget(copy_btn)
+
+        close_btn = QPushButton("CLOSE")
+        close_btn.clicked.connect(dialog.accept)
+        btn_layout.addWidget(close_btn)
+
+        layout.addLayout(btn_layout)
+        dialog.exec()
+
+    def _copy_json_to_clipboard(self, cfg: dict):
+        import json
+        from PyQt6.QtWidgets import QApplication
+        clipboard = QApplication.clipboard()
+        clipboard.setText(json.dumps(cfg, indent=2))
+        self.log_message.emit("Config JSON copied to clipboard", "INFO")
 
     def _wire_signals(self):
         """Connect UI signals to REST client and vice versa."""
@@ -98,7 +147,6 @@ class ConfigPage(QWidget):
         self.raspi_config.config_save_requested.connect(self._do_patch_drone)
         self.raspi_config.config_reset_requested.connect(
             lambda: self.log_message.emit("Drone config reset not fully implemented in API", "WARNING")
-            # lambda: self._rest.reset_drone_config() # (if implemented in Drone API)
         )
         self.raspi_config.restart_drone_requested.connect(
             lambda: self._rest.restart_drone()
@@ -146,18 +194,7 @@ class ConfigPage(QWidget):
     def _on_ground_config_loaded(self, cfg: dict):
         self.laptop_config.set_config(cfg)
         self.log_message.emit("[CONFIG] Ground config successfully synced with backend.", "INFO")
-        self._refresh_preview()
 
     def _on_drone_config_loaded(self, cfg: dict):
         self.raspi_config.set_config(cfg)
         self.log_message.emit("[CONFIG] Drone config successfully synced with backend.", "INFO")
-        self._refresh_preview()
-
-    def _refresh_preview(self):
-        active = self._tabs.currentIndex()
-        panel = self.raspi_config if active == 0 else self.laptop_config
-        try:
-            cfg = panel._get_values_from_ui()
-            self._preview.setPlainText(json.dumps(cfg, indent=2))
-        except Exception as exc:
-            self._preview.setPlainText(f"// Error reading config:\n// {exc}")
