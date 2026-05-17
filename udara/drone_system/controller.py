@@ -203,8 +203,12 @@ class DroneAudioSystem:
                 # Pertahankan overlap_bytes terakhir untuk window berikutnya
                 ring_buffer = bytearray(ring_buffer[chunk_bytes:])
 
-                # Proses secara non-blocking (tapi pakai lock agar tidak overlap)
-                self._process_chunk_bytes(window, bpf, sample_rate)
+                # Proses secara non-blocking dengan thread terpisah agar proses read stdout (arecord) tidak terhenti
+                threading.Thread(
+                    target=self._process_chunk_bytes,
+                    args=(window, bpf, sample_rate),
+                    daemon=True
+                ).start()
 
             # Jika stop_event aktif, selesaikan sisa buffer lalu keluar
             if self._stop_event.is_set() and not data:
