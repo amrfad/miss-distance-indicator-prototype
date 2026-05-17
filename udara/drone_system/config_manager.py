@@ -305,6 +305,25 @@ _PARAM_SCHEMA = [
         "type": "number", "default": 0.1, "min": 0.01, "max": 1.0, "step": 0.01,
         "category": "runtime", "requires_restart": False, "unit": "s",
     },
+    # ── Streaming / Chunk Processing ──────────────────────────────────
+    {
+        "key": "chunk_duration_sec", "label": "Chunk Duration",
+        "description": "Durasi utama setiap chunk audio yang diproses dan dikirim ke ground (detik)",
+        "type": "number", "default": 5.0, "min": 1.0, "max": 60.0, "step": 0.5,
+        "category": "ground_only", "requires_restart": True, "unit": "s",
+    },
+    {
+        "key": "chunk_overlap_sec", "label": "Chunk Overlap",
+        "description": "Durasi overlap dengan chunk sebelumnya untuk menangani event di perbatasan chunk",
+        "type": "number", "default": 1.0, "min": 0.0, "max": 10.0, "step": 0.25,
+        "category": "ground_only", "requires_restart": True, "unit": "s",
+    },
+    {
+        "key": "keep_audio_files", "label": "Keep Audio Files",
+        "description": "Simpan file WAV chunk setelah TDOA dihitung. False = hapus otomatis untuk hemat storage",
+        "type": "boolean", "default": True,
+        "category": "ground_only", "requires_restart": False, "unit": None,
+    },
 ]
 
 # Mapping: key (snake_case) → nama variabel di config.py (UPPER_CASE)
@@ -341,6 +360,9 @@ _KEY_TO_CONFIG_VAR = {
     "event_padding_sec": "EVENT_PADDING_SEC",
     "post_recording_delay": "POST_RECORDING_DELAY",
     "main_loop_delay": "MAIN_LOOP_DELAY",
+    "chunk_duration_sec": "CHUNK_DURATION_SEC",
+    "chunk_overlap_sec": "CHUNK_OVERLAP_SEC",
+    "keep_audio_files": "KEEP_AUDIO_FILES",
 }
 
 _GROUND_ONLY_KEYS: set[str] = {

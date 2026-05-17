@@ -1,12 +1,24 @@
 """
 Main System Controller
-Mengkoordinasi semua module untuk sistem drone audio detection
+Mengkoordinasi semua module untuk sistem drone audio detection.
+
+Arsitektur continuous streaming:
+  - arecord mengeluarkan raw PCM bytes ke stdout pipe
+  - _stream_processor_thread membaca byte stream, membangun window overlap,
+    dan memproses setiap chunk secara periodik
+  - Setiap chunk disimpan ke subfolder chunks/ dan dikirim via serial
 """
 
 import os
+import io
 import time
 import uuid
+import threading
+import shutil
+import numpy as np
+import soundfile as sf
 from datetime import datetime
+
 from .recorder import AudioRecorder
 from .processor import AudioProcessor
 from .detector import EventDetector
@@ -24,250 +36,116 @@ from .config_manager import get_global_config_manager
 
 
 class DroneAudioSystem:
-    """Sistem utama yang mengkoordinasi semua module"""
-    
+    """Sistem utama yang mengkoordinasi semua module dengan continuous streaming."""
+
     def __init__(self):
-        """Initialize sistem dengan semua module yang diperlukan"""
+        """Initialize sistem dengan semua module yang diperlukan."""
         self.recorder = AudioRecorder()
-        
-        # Initialize processor dengan format dari recorder
+
         rec_status = self.recorder.get_status()
         output_format = rec_status.get("format", "S24_3LE")
         self.processor = AudioProcessor(output_format=output_format)
-        
+
         self.detector = EventDetector()
         self.comms = SerialCommunicator()
-        
+
         self.current_session_dir = None
-        self.current_wav_path = None
+        self.chunks_dir = None
         self.recording_start_time = None
-        
-        # Buat base output directory jika belum ada
-        self.base_output_dir = get_global_config_manager().get_config().get("base_output_dir", "drone_recordings")
+
+        # Threading state
+        self._stream_thread: threading.Thread | None = None
+        self._stop_event = threading.Event()
+        self._chunk_lock = threading.Lock()  # Mencegah dua chunk diproses bersamaan
+
+        cfg = get_global_config_manager().get_config()
+        self.base_output_dir = cfg.get("base_output_dir", "drone_recordings")
         os.makedirs(self.base_output_dir, exist_ok=True)
-        
+
         print(f"[SYSTEM] DroneAudioSystem initialized (format: {output_format})")
-        
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
     def start_recording(self):
         """
-        Mulai recording session baru
-        
+        Mulai recording session baru dengan continuous chunk processing.
+
         Returns:
-            tuple: (success, message)
-                - success (bool): True jika berhasil
-                - message (str): Pesan status
+            tuple: (success: bool, message: str)
         """
         if self.recorder.is_recording():
             return False, "Recording sudah berjalan"
-            
-        # Buat session folder dengan timestamp dan UID
+
+        # Buat session folder
         timestamp = datetime.now().strftime(TIMESTAMP_FORMAT)
         uid = uuid.uuid4().hex[:6]
         session_id = f"session_{timestamp}_{uid}"
         self.current_session_dir = os.path.join(self.base_output_dir, session_id)
-        os.makedirs(self.current_session_dir, exist_ok=True)
-        
-        # Path untuk raw recording
-        self.current_wav_path = os.path.join(self.current_session_dir, "raw_12ch.wav")
-        
-        # Mulai recording
-        success = self.recorder.start_recording(self.current_wav_path)
-        if success:
-            self.recording_start_time = time.time()
-            return True, f"Recording started: {session_id}"
-        else:
+        self.chunks_dir = os.path.join(self.current_session_dir, "chunks")
+        os.makedirs(self.chunks_dir, exist_ok=True)
+
+        # Mulai recording (streaming ke stdout pipe)
+        success = self.recorder.start_recording()
+        if not success:
             return False, "Failed to start recording"
-    
+
+        self.recording_start_time = time.time()
+        self._stop_event.clear()
+
+        # Jalankan thread pemrosesan streaming
+        self._stream_thread = threading.Thread(
+            target=self._stream_processor_thread,
+            daemon=True,
+            name="StreamProcessor"
+        )
+        self._stream_thread.start()
+
+        return True, f"Recording started: {session_id}"
+
     def stop_and_process(self):
         """
-        Stop recording dan proses audio (filter + detect + save)
-        
+        Stop recording. Thread streaming akan otomatis menyelesaikan
+        sisa buffer sebagai chunk terakhir sebelum keluar.
+
         Returns:
-            tuple: (success, message, events)
-                - success (bool): True jika berhasil
-                - message (str): Pesan status
-                - events (list): List of detected events
+            tuple: (success: bool, message: str, events: list | None)
         """
         if not self.recorder.is_recording():
             return False, "Tidak ada recording aktif", None
-            
-        # Stop recording
+
+        # Sinyal thread untuk berhenti setelah selesai memproses sisa buffer
+        self._stop_event.set()
+
+        # Hentikan arecord (akan menutup stdout pipe, sehingga read() di thread return)
         self.recorder.stop_recording()
-        time.sleep(POST_RECORDING_DELAY)  # Tunggu file selesai ditulis
-        
-        if not os.path.exists(self.current_wav_path):
-            return False, "File recording tidak ditemukan", None
-            
-        print("\n" + "="*50)
-        print("MEMPROSES AUDIO")
-        print("="*50)
-        
-        try:
-            # Get active take indices from recorder (based on probe result)
-            active_indices = self.recorder.get_active_take_indices()
-            print(f"[SYSTEM] Using channel indices: {active_indices}")
+        time.sleep(POST_RECORDING_DELAY)
 
-            cfg = get_global_config_manager().get_config()
-            sample_rate = cfg.get("sample_rate", 48000)
+        # Tunggu thread selesai memproses sisa data (max 60 detik)
+        if self._stream_thread and self._stream_thread.is_alive():
+            self._stream_thread.join(timeout=60)
 
-            # 1. Extract channels
-            original_files, data, sr, duration = self.processor.extract_channels(
-                self.current_wav_path, 
-                self.current_session_dir,
-                sr_override=sample_rate,
-                channel_indices=active_indices
-            )
-            
-            if not original_files:
-                return False, "Ekstraksi channel gagal", None
-            
-            # 2. Filter channels
-            filtered_files, filtered_data = self.processor.filter_channels(
-                data, 
-                sr, 
-                self.current_session_dir,
-                channel_indices=active_indices
-            )
-            
-            # 3. Detect events
-            events = self.detector.detect_events(self.current_session_dir)
-            
-            # 4. Cut and Save Event Clips (Using Filtered Data)
-            processed_events = self.processor.save_event_clips(
-                filtered_data, 
-                sr, 
-                events, 
-                self.current_session_dir,
-                padding=EVENT_PADDING_SEC,
-                channel_indices=active_indices
-            )
-            
-            # 5. Calculate TDOA for each event
-            print("[SYSTEM] Calculating TDOA...")
-            tdoa_results = []
-            for event in processed_events:
-                # Re-slice filtered data based on padded times
-                start_sample = int(event['padded_start'] * sr)
-                end_sample = int(event['padded_end'] * sr)
-                
-                # Ensure indices are within bounds
-                start_sample = max(0, start_sample)
-                end_sample = min(filtered_data.shape[0], end_sample)
-                
-                event_audio = filtered_data[start_sample:end_sample, :]
-                
-                # Calculate TDOA
-                event_tdoa = calculate_all_tdoa(event_audio, sr, channel_indices=active_indices)
-                
-                tdoa_results.append({
-                    "event_number": event['event_number'],
-                    "tdoa": event_tdoa
-                })
+        self._reset_state()
+        return True, "Recording stopped and processed", None
 
-            # 6. Save results to JSON
-            cfg = get_global_config_manager().get_config()
-            events_json_filename = cfg.get("events_json", "session_events.json")
-            tdoa_json_filename = cfg.get("tdoa_json", "session_tdoa.json")
-
-            session_id = os.path.basename(self.current_session_dir)
-            timestamp = datetime.now().strftime(LOG_TIMESTAMP_FORMAT)
-            json_path = os.path.join(self.current_session_dir, events_json_filename)
-            tdoa_json_path = os.path.join(self.current_session_dir, tdoa_json_filename)
-            
-            # Collect extra info from recorder
-            rec_status = self.recorder.get_status()
-            profile_name = rec_status.get("profile", "Unknown")
-            profile = DEVICE_PROFILES.get(profile_name, {})
-            num_mics = profile.get("num_mics", 4)
-            num_tdoa_pairs = num_mics * (num_mics - 1) // 2  # C(n,2) = n*(n-1)/2
-            
-            extra_info = {
-                "device_profile": profile_name,
-                "format": rec_status.get("format", "Unknown"),
-                "channels": rec_status.get("channels", 0),
-                "num_mics": num_mics,
-                "num_tdoa_pairs": num_tdoa_pairs
-            }
-            
-            # Save Events JSON
-            DataLogger.save_events_json(
-                json_path, 
-                session_id, 
-                timestamp, 
-                processed_events, 
-                duration, 
-                sr, 
-                extra_info=extra_info
-            )
-            
-            # Save TDOA JSON
-            DataLogger.save_events_json(
-                tdoa_json_path,
-                session_id,
-                timestamp,
-                tdoa_results, # Pass TDOA results as events data
-                duration,
-                sr,
-                extra_info={"type": "TDOA_RESULTS", **extra_info}
-            )
-            
-            print("\n" + "="*50)
-            print("PROSES SELESAI")
-            print("="*50)
-            print(f"Session: {session_id}")
-            print(f"Duration: {duration:.2f}s")
-            print(f"Events detected: {len(events)}")
-            print(f"Results saved to: {json_path}")
-            print(f"TDOA saved to: {tdoa_json_path}")
-            
-            # 7. Send TDOA JSON to Ground (hanya jika ONLINE mode)
-            if cfg.get("operation_mode", "OFFLINE") == "ONLINE":
-                print("[SYSTEM] Sending TDOA results to ground...")
-                if self.comms.send_file(tdoa_json_path):
-                    print("[SYSTEM] TDOA results sent successfully.")
-                else:
-                    print("[SYSTEM] Failed to send TDOA results.")
-            else:
-                print("[SYSTEM] OFFLINE mode - skipping file transmission")
-            
-            print("="*50 + "\n")
-            
-            # Reset state
-            self._reset_state()
-            
-            return True, f"Processed: {len(events)} events detected", events
-            
-        except Exception as e:
-            print(f"[ERROR] Processing failed: {e}")
-            self._reset_state()
-            return False, f"Processing error: {str(e)}", None
-    
     def get_status(self):
         """
-        Dapatkan status sistem
-        
+        Dapatkan status sistem.
+
         Returns:
-            tuple: (success, status_message, data)
-                - success (bool): True jika berhasil
-                - status_message (str): Status string
-                - data (dict): Additional status data
+            tuple: (success: bool, status_message: str, data: dict | None)
         """
         if self.recorder.is_recording():
             elapsed = time.time() - self.recording_start_time if self.recording_start_time else 0
             return True, f"RECORDING ({elapsed:.1f}s)", {"elapsed": elapsed}
         else:
             return True, "IDLE", None
-    
-    def _reset_state(self):
-        """Reset internal state setelah processing selesai"""
-        self.current_session_dir = None
-        self.current_wav_path = None
-        self.recording_start_time = None
-    
+
     def get_system_info(self):
         """
-        Dapatkan informasi lengkap sistem
-        
+        Dapatkan informasi lengkap sistem.
+
         Returns:
             dict: Dictionary berisi informasi sistem
         """
@@ -276,6 +154,286 @@ class DroneAudioSystem:
             "recorder": self.recorder.get_status(),
             "processor_features": self.processor.get_available_features(),
             "output_directory": cfg.get("base_output_dir", "drone_recordings"),
-            "events_json_filename": cfg.get("events_json", "session_events.json"),
-            "current_session": self.current_session_dir
+            "current_session": self.current_session_dir,
         }
+
+    # ------------------------------------------------------------------
+    # Streaming thread
+    # ------------------------------------------------------------------
+
+    def _stream_processor_thread(self):
+        """
+        Thread utama yang membaca raw PCM dari stdout arecord.
+
+        Algoritma:
+          - Baca bytes secara continous ke dalam ring_buffer (bytearray)
+          - Setiap kali ring_buffer >= bytes untuk (chunk_duration + overlap),
+            ambil window terbaru, proses, kirim, lalu pertahankan 'overlap'
+            bytes terakhir sebagai awal buffer berikutnya.
+          - Saat stop_event di-set, proses sisa buffer sebagai chunk terakhir.
+        """
+        cfg = get_global_config_manager().get_config()
+        chunk_dur = cfg.get("chunk_duration_sec", 5.0)
+        overlap_dur = cfg.get("chunk_overlap_sec", 1.0)
+        sample_rate = cfg.get("sample_rate", 48000)
+
+        bpf = self.recorder.bytes_per_frame  # bytes per frame (all channels)
+        chunk_bytes = self.recorder.bytes_for_duration(chunk_dur)
+        overlap_bytes = self.recorder.bytes_for_duration(overlap_dur)
+        window_bytes = chunk_bytes + overlap_bytes
+
+        print(f"[STREAM] Chunk: {chunk_dur}s + {overlap_dur}s overlap = {window_bytes} bytes/window")
+
+        ring_buffer = bytearray()
+        READ_SIZE = 4096  # bytes per read call
+
+        while True:
+            data = self.recorder.read_raw_bytes(READ_SIZE)
+
+            if data:
+                ring_buffer.extend(data)
+            elif not self.recorder.is_recording():
+                # pipe EOF → arecord sudah berhenti
+                break
+
+            # Cek apakah sudah cukup untuk satu window chunk
+            if len(ring_buffer) >= window_bytes:
+                # Ambil window: overlap lama + chunk baru
+                window = bytes(ring_buffer[:window_bytes])
+                # Pertahankan overlap_bytes terakhir untuk window berikutnya
+                ring_buffer = bytearray(ring_buffer[chunk_bytes:])
+
+                # Proses secara non-blocking (tapi pakai lock agar tidak overlap)
+                self._process_chunk_bytes(window, bpf, sample_rate)
+
+            # Jika stop_event aktif, selesaikan sisa buffer lalu keluar
+            if self._stop_event.is_set() and not data:
+                break
+
+        # Proses sisa buffer (chunk terakhir, bisa < 5 detik)
+        if len(ring_buffer) > 0:
+            min_bytes = self.recorder.bytes_for_duration(0.5)  # minimal 0.5 detik
+            if len(ring_buffer) >= min_bytes:
+                print(f"[STREAM] Processing final chunk ({len(ring_buffer)} bytes)")
+                self._process_chunk_bytes(bytes(ring_buffer), bpf, sample_rate)
+            else:
+                print(f"[STREAM] Sisa buffer terlalu kecil ({len(ring_buffer)} bytes), diabaikan.")
+
+        print("[STREAM] Stream processor thread selesai.")
+
+    # ------------------------------------------------------------------
+    # Chunk processing
+    # ------------------------------------------------------------------
+
+    def _process_chunk_bytes(self, raw_bytes: bytes, bpf: int, sample_rate: int):
+        """
+        Konversi raw PCM bytes → proses audio → hitung TDOA → kirim JSON.
+
+        Args:
+            raw_bytes:   Byte string raw PCM (interleaved, semua channel)
+            bpf:         Bytes per frame (bytes_per_sample × num_channels)
+            sample_rate: Sample rate dalam Hz
+        """
+        with self._chunk_lock:
+            cfg = get_global_config_manager().get_config()
+            active_indices = self.recorder.get_active_take_indices()
+            keep_audio = cfg.get("keep_audio_files", True)
+
+            # Buat subfolder chunk dengan timestamp
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            chunk_name = f"chunk_{ts}"
+            chunk_dir = os.path.join(self.chunks_dir, chunk_name)
+            os.makedirs(chunk_dir, exist_ok=True)
+
+            chunk_wav_path = os.path.join(chunk_dir, "raw.wav")
+
+            try:
+                # 1. Konversi raw bytes → numpy array → WAV
+                data_np = self._raw_bytes_to_ndarray(raw_bytes, bpf, self.recorder.active_channels)
+                if data_np is None or data_np.shape[0] == 0:
+                    print(f"[CHUNK] Konversi bytes gagal, skip chunk {chunk_name}")
+                    shutil.rmtree(chunk_dir, ignore_errors=True)
+                    return
+
+                self._write_wav(chunk_wav_path, data_np, sample_rate)
+                duration = data_np.shape[0] / sample_rate
+                print(f"\n[CHUNK] Processing {chunk_name} ({duration:.2f}s)")
+
+                # 2. Extract & filter channels
+                original_files, data, sr, actual_duration = self.processor.extract_channels(
+                    chunk_wav_path,
+                    chunk_dir,
+                    sr_override=sample_rate,
+                    channel_indices=active_indices
+                )
+                if not original_files:
+                    print(f"[CHUNK] Ekstraksi channel gagal: {chunk_name}")
+                    if not keep_audio:
+                        shutil.rmtree(chunk_dir, ignore_errors=True)
+                    return
+
+                filtered_files, filtered_data = self.processor.filter_channels(
+                    data, sr, chunk_dir, channel_indices=active_indices
+                )
+
+                # 3. Detect events
+                events = self.detector.detect_events(chunk_dir)
+
+                # 4. Cut event clips
+                processed_events = self.processor.save_event_clips(
+                    filtered_data, sr, events, chunk_dir,
+                    padding=cfg.get("event_padding_sec", EVENT_PADDING_SEC),
+                    channel_indices=active_indices
+                )
+
+                # 5. Calculate TDOA
+                tdoa_results = []
+                for event in processed_events:
+                    start_sample = max(0, int(event["padded_start"] * sr))
+                    end_sample = min(filtered_data.shape[0], int(event["padded_end"] * sr))
+                    event_audio = filtered_data[start_sample:end_sample, :]
+                    event_tdoa = calculate_all_tdoa(event_audio, sr, channel_indices=active_indices)
+                    tdoa_results.append({
+                        "event_number": event["event_number"],
+                        # Waktu absolut dihitung dari awal session untuk deduplikasi di darat
+                        "chunk_timestamp": ts,
+                        "event_start_in_chunk": event["original_start"],
+                        "event_end_in_chunk": event["original_end"],
+                        "tdoa": event_tdoa
+                    })
+
+                # 6. Simpan TDOA JSON
+                rec_status = self.recorder.get_status()
+                profile_name = rec_status.get("profile", "Unknown")
+                profile = DEVICE_PROFILES.get(profile_name, {})
+                num_mics = profile.get("num_mics", 4)
+                num_tdoa_pairs = num_mics * (num_mics - 1) // 2
+
+                extra_info = {
+                    "type": "TDOA_RESULTS",
+                    "chunk_name": chunk_name,
+                    "chunk_duration_sec": duration,
+                    "device_profile": profile_name,
+                    "format": rec_status.get("format", "Unknown"),
+                    "channels": rec_status.get("channels", 0),
+                    "num_mics": num_mics,
+                    "num_tdoa_pairs": num_tdoa_pairs,
+                }
+
+                tdoa_json_path = os.path.join(chunk_dir, "tdoa.json")
+                log_ts = datetime.now().strftime(LOG_TIMESTAMP_FORMAT)
+                DataLogger.save_events_json(
+                    tdoa_json_path,
+                    chunk_name,
+                    log_ts,
+                    tdoa_results,
+                    duration,
+                    sr,
+                    extra_info=extra_info
+                )
+
+                print(f"[CHUNK] {len(events)} event(s), TDOA saved to {tdoa_json_path}")
+
+                # 7. Kirim ke ground (hanya ONLINE mode)
+                if cfg.get("operation_mode", "OFFLINE") == "ONLINE":
+                    if self.comms.send_file(tdoa_json_path):
+                        print(f"[CHUNK] TDOA sent successfully.")
+                    else:
+                        print(f"[CHUNK] Failed to send TDOA.")
+                else:
+                    print(f"[CHUNK] OFFLINE mode — skip serial transmission")
+
+                # 8. Hapus file audio jika dikonfigurasi
+                if not keep_audio:
+                    self._cleanup_audio_files(chunk_dir, tdoa_json_path)
+
+            except Exception as e:
+                import traceback
+                print(f"[ERROR] Chunk processing failed: {e}")
+                traceback.print_exc()
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _raw_bytes_to_ndarray(raw_bytes: bytes, bpf: int, n_channels: int) -> np.ndarray | None:
+        """
+        Konversi raw PCM bytes (interleaved, semua channel) ke numpy float32 array.
+
+        Mendukung format:
+          - S24_3LE (3 bytes per sample) → sign-extend ke int32 → float32
+          - S16_LE  (2 bytes per sample) → int16 → float32
+          - S32_LE / FLOAT_LE (4 bytes per sample)
+        """
+        try:
+            bps = bpf // n_channels  # bytes per sample per channel
+
+            if bps == 3:
+                # S24_3LE: pad ke 4 bytes (little-endian sign extension)
+                n_frames = len(raw_bytes) // bpf
+                usable = n_frames * bpf
+                arr = np.frombuffer(raw_bytes[:usable], dtype=np.uint8)
+                arr = arr[: n_frames * n_channels * 3].reshape(n_frames * n_channels, 3)
+                # Sign-extend: [[b0, b1, b2]] → int32 little-endian
+                padded = np.zeros((n_frames * n_channels, 4), dtype=np.uint8)
+                padded[:, :3] = arr
+                # Salin sign byte (MSB dari S24)
+                padded[:, 3] = np.where(arr[:, 2] >= 0x80, 0xFF, 0x00).astype(np.uint8)
+                samples_i32 = padded.view(np.int32).reshape(-1)
+                data = samples_i32.reshape(n_frames, n_channels).astype(np.float32) / 2**31
+            elif bps == 2:
+                n_frames = len(raw_bytes) // bpf
+                usable = n_frames * bpf
+                data = np.frombuffer(raw_bytes[:usable], dtype=np.int16).reshape(n_frames, n_channels).astype(np.float32) / 32768.0
+            elif bps == 4:
+                n_frames = len(raw_bytes) // bpf
+                usable = n_frames * bpf
+                raw = np.frombuffer(raw_bytes[:usable], dtype=np.int32).reshape(n_frames, n_channels)
+                data = raw.astype(np.float32) / 2**31
+            else:
+                print(f"[WARN] Format tidak dikenal (bps={bps}), skip")
+                return None
+
+            return data
+        except Exception as e:
+            print(f"[ERROR] _raw_bytes_to_ndarray: {e}")
+            return None
+
+    @staticmethod
+    def _write_wav(path: str, data: np.ndarray, sr: int):
+        """Simpan numpy float32 array ke file WAV."""
+        sf.write(path, data, sr, subtype="FLOAT")
+
+    @staticmethod
+    def _cleanup_audio_files(chunk_dir: str, keep_file: str):
+        """
+        Hapus semua file di chunk_dir kecuali keep_file (TDOA JSON).
+
+        Args:
+            chunk_dir:  Path folder chunk
+            keep_file:  Absolute path file yang tidak akan dihapus
+        """
+        try:
+            for root, dirs, files in os.walk(chunk_dir, topdown=False):
+                for fname in files:
+                    fpath = os.path.join(root, fname)
+                    if os.path.abspath(fpath) != os.path.abspath(keep_file):
+                        os.remove(fpath)
+                for d in dirs:
+                    dpath = os.path.join(root, d)
+                    try:
+                        os.rmdir(dpath)
+                    except OSError:
+                        pass  # direktori tidak kosong (event clips masih ada)
+            print(f"[CLEANUP] Audio files removed from {os.path.basename(chunk_dir)}")
+        except Exception as e:
+            print(f"[CLEANUP] Error: {e}")
+
+    def _reset_state(self):
+        """Reset internal state setelah session selesai."""
+        self.current_session_dir = None
+        self.chunks_dir = None
+        self.recording_start_time = None
+        self._stream_thread = None
+        self._stop_event.clear()

@@ -1,7 +1,13 @@
 """
 JSON Receiver Module
 Mengelola penerimaan file JSON via serial dengan protokol [START]/[END] marker.
-Diekstrak dari EventGUI.receive_json() di versi original.
+
+Mode baru:
+  - continuous=True: Loop terus-menerus menerima paket JSON berulang kali,
+    berhenti hanya saat stop_continuous() dipanggil.
+  - Deduplikasi: Berdasarkan kombinasi (chunk_timestamp, event_number) dari
+    field dalam JSON yang diterima, untuk mencegah event yang sama (yang ada
+    dalam overlap) diproses dua kali.
 """
 
 import os
@@ -9,6 +15,7 @@ import json
 import time
 import datetime
 import traceback
+import threading
 
 
 class JsonReceiver:
@@ -17,18 +24,29 @@ class JsonReceiver:
 
     Dijalankan di thread terpisah (non-blocking terhadap GUI).
 
-    Usage:
+    Mode:
+        continuous=False (default) — satu kali terima lalu berhenti (legacy)
+        continuous=True            — loop terus sampai stop_continuous() dipanggil
+
+    Deduplikasi:
+        Event dengan kombinasi (chunk_timestamp, event_number) yang sama tidak
+        akan disimpan ulang meski datang lebih dari satu kali (karena overlap).
+
+    Usage (continuous):
         receiver = JsonReceiver(serial_manager, file_transfer, log_callback)
-        # Di thread:
-        threading.Thread(target=receiver.receive_json, kwargs={"on_saved": callback}).start()
+        t = threading.Thread(target=receiver.receive_json, kwargs={"on_saved": cb, "continuous": True})
+        t.start()
+        # saat ingin berhenti:
+        receiver.stop_continuous()
+        t.join()
     """
 
     def __init__(self, serial_manager, file_transfer, log_callback, save_directory: str = None):
         """
         Args:
             serial_manager: Instance SerialManager
-            file_transfer: Instance FileTransferManager (untuk set/clear json router)
-            log_callback: Callable(str) untuk logging
+            file_transfer:  Instance FileTransferManager (untuk set/clear json router)
+            log_callback:   Callable(str) untuk logging
             save_directory: Direktori untuk menyimpan JSON yang diterima
         """
         self.serial_manager = serial_manager
@@ -39,6 +57,13 @@ class JsonReceiver:
         # Internal buffer (diisi via _route_data yang didaftarkan ke file_transfer)
         self._json_buffer = bytearray()
 
+        # Continuous mode state
+        self._stop_flag = threading.Event()
+
+        # Deduplikasi: set of (chunk_timestamp, event_number) yang sudah pernah disimpan
+        self._seen_event_ids: set[tuple] = set()
+        self._seen_lock = threading.Lock()
+
     @property
     def save_directory(self):
         return self._save_directory
@@ -46,6 +71,25 @@ class JsonReceiver:
     @save_directory.setter
     def save_directory(self, value):
         self._save_directory = value
+
+    # ------------------------------------------------------------------
+    # Continuous mode control
+    # ------------------------------------------------------------------
+
+    def stop_continuous(self):
+        """
+        Sinyal agar loop penerimaan berhenti setelah paket JSON saat ini selesai.
+        """
+        self._stop_flag.set()
+
+    def reset(self):
+        """
+        Reset state untuk memulai sesi penerimaan baru.
+        Bersihkan duplikasi cache dan stop flag.
+        """
+        self._stop_flag.clear()
+        with self._seen_lock:
+            self._seen_event_ids.clear()
 
     # ------------------------------------------------------------------
     # Internal data router (didaftarkan ke FileTransferManager)
@@ -56,29 +100,144 @@ class JsonReceiver:
         self._json_buffer.extend(raw_data)
 
     # ------------------------------------------------------------------
+    # Deduplikasi helper
+    # ------------------------------------------------------------------
+
+    def _filter_duplicate_events(self, parsed_json: dict) -> dict:
+        """
+        Filter event yang sudah pernah diterima sebelumnya.
+
+        Kunci deduplikasi: (chunk_timestamp, event_number)
+        Jika chunk_timestamp tidak ada di JSON (format lama), gunakan UUID acak
+        sehingga selalu dianggap unik.
+
+        Args:
+            parsed_json: Dict JSON yang sudah di-parse
+
+        Returns:
+            Salinan dict dengan field 'events' yang sudah difilter.
+            Mengembalikan dict yang sama jika tidak ada field 'events'.
+        """
+        events = parsed_json.get("events")
+        if not isinstance(events, list):
+            return parsed_json  # Format tidak dikenal, lewati deduplikasi
+
+        filtered = []
+        new_ids = []
+
+        for ev in events:
+            chunk_ts = ev.get("chunk_timestamp", f"_unique_{id(ev)}")
+            ev_num = ev.get("event_number", "_")
+            key = (chunk_ts, ev_num)
+
+            with self._seen_lock:
+                if key in self._seen_event_ids:
+                    self._log(f"[DEDUP] Event duplikat dilewati: chunk={chunk_ts}, event={ev_num}")
+                    continue
+                new_ids.append(key)
+
+            filtered.append(ev)
+
+        # Daftarkan semua ID baru setelah selesai iterasi
+        with self._seen_lock:
+            for key in new_ids:
+                self._seen_event_ids.add(key)
+
+        if len(filtered) < len(events):
+            self._log(
+                f"[DEDUP] {len(events) - len(filtered)} event duplikat dibuang, "
+                f"{len(filtered)} event unik disimpan."
+            )
+
+        result = dict(parsed_json)
+        result["events"] = filtered
+        result["event_count"] = len(filtered)
+        return result
+
+    # ------------------------------------------------------------------
     # Public: receive_json (dijalankan di thread)
     # ------------------------------------------------------------------
 
-    def receive_json(self, on_saved=None):
+    def receive_json(self, on_saved=None, continuous: bool = False):
         """
         Tunggu dan terima JSON dari serial port.
-        Identik secara logika dengan EventGUI.receive_json() di versi original.
 
         Args:
-            on_saved: Optional Callable(filename: str) dipanggil saat JSON berhasil disimpan.
+            on_saved:   Optional Callable(filename: str) dipanggil saat JSON berhasil disimpan.
+            continuous: Jika True, loop terus menerus menerima paket JSON
+                        sampai stop_continuous() dipanggil.
 
         Returns:
-            bool: True jika berhasil, False jika gagal/timeout.
+            bool: True jika minimal satu JSON berhasil diterima.
         """
+        if continuous:
+            return self._receive_continuous(on_saved)
+        else:
+            return self._receive_once(on_saved)
+
+    # ------------------------------------------------------------------
+    # Continuous loop
+    # ------------------------------------------------------------------
+
+    def _receive_continuous(self, on_saved=None) -> bool:
+        """Loop terus-menerus sampai stop_continuous() dipanggil."""
+        self._log("[RX] Continuous JSON receiver started.")
+        any_success = False
+
         try:
             if not self.serial_manager.is_connected():
                 self._log("[ERROR] Serial not connected")
                 return False
 
-            # Daftarkan buffer ke FileTransferManager
+            self.file_transfer.set_json_router(self._route_data)
+
+            while not self._stop_flag.is_set():
+                ok = self._receive_once_inner(on_saved)
+                if ok:
+                    any_success = True
+                # Jika gagal tapi stop belum di-set, tunggu sebentar dan coba lagi
+                elif not self._stop_flag.is_set():
+                    self._log("[RX] Menunggu paket berikutnya...")
+                    # Reset buffer untuk siap menerima transmisi berikutnya
+                    self._json_buffer = bytearray()
+
+        finally:
+            self.file_transfer.clear_json_router()
+            self._json_buffer = bytearray()
+            self._log("[RX] Continuous JSON receiver stopped.")
+
+        return any_success
+
+    # ------------------------------------------------------------------
+    # Single-shot reception (legacy & internal)
+    # ------------------------------------------------------------------
+
+    def _receive_once(self, on_saved=None) -> bool:
+        """Terima satu paket JSON lalu berhenti."""
+        try:
+            if not self.serial_manager.is_connected():
+                self._log("[ERROR] Serial not connected")
+                return False
+
             self._json_buffer = bytearray()
             self.file_transfer.set_json_router(self._route_data)
 
+            return self._receive_once_inner(on_saved)
+
+        except Exception as e:
+            self._log(f"[ERROR] Failed to receive JSON: {e}")
+            self._log(f"Traceback: {traceback.format_exc()}")
+            return False
+        finally:
+            self.file_transfer.clear_json_router()
+            self._json_buffer = bytearray()
+
+    def _receive_once_inner(self, on_saved=None) -> bool:
+        """
+        Inti penerimaan satu paket JSON (digunakan oleh keduanya).
+        Buffer harus sudah bersih saat masuk.
+        """
+        try:
             buffer = b""
             receiving = False
             start_time = None
@@ -86,12 +245,16 @@ class JsonReceiver:
             end_detected_time = None
 
             timeout_counter = 0
-            max_timeout = 1500  # 15 detik (150 x 0.1s)
+            max_timeout = 1500  # 15 detik (150 × 0.1s)
 
             self._log("Waiting for JSON data...")
 
             while timeout_counter < max_timeout:
-                # Ambil data dari buffer internal (diisi oleh _route_data)
+                # Jika stop diminta di tengah tunggu, keluar
+                if self._stop_flag.is_set():
+                    self._log("[RX] Stop requested, aborting wait.")
+                    return False
+
                 if len(self._json_buffer) > 0:
                     data = bytes(self._json_buffer)
                     buffer += data
@@ -148,7 +311,7 @@ class JsonReceiver:
                                 json_data = json_data[:-1]
 
                             self._log(
-                                f"[DEBUG] Processing JSON - [END] at position {end_idx}"
+                                f"[DEBUG] Processing JSON — [END] at position {end_idx}"
                             )
                             self._log(f"[DEBUG] Total buffer size: {len(buffer)} bytes")
                             self._log(f"[DEBUG] JSON data length: {len(json_data)} bytes")
@@ -164,7 +327,6 @@ class JsonReceiver:
                             try:
                                 json_str = json_data.decode("utf-8")
 
-                                # Validasi struktur JSON (brace counting)
                                 open_braces = json_str.count("{")
                                 close_braces = json_str.count("}")
                                 open_brackets = json_str.count("[")
@@ -175,18 +337,7 @@ class JsonReceiver:
                                         f"[ERROR] Unbalanced braces: {{ {open_braces} vs }} {close_braces}"
                                     )
                                     self._log("[ERROR] JSON incomplete or corrupted")
-                                    after_end = buffer[end_idx:]
-                                    self._log(
-                                        f"[DEBUG] Data after [END] ({len(after_end)} bytes): {repr(after_end[:200])}"
-                                    )
-                                    debug_file = f"debug_json_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-                                    with open(debug_file, "wb") as f:
-                                        f.write(json_data)
-                                    self._log(f"Raw data saved to: {debug_file}")
-                                    buffer_file = f"debug_buffer_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-                                    with open(buffer_file, "wb") as f:
-                                        f.write(buffer)
-                                    self._log(f"Full buffer saved to: {buffer_file}")
+                                    self._save_debug_file(json_data, buffer, end_idx)
                                     return False
 
                                 if open_brackets != close_brackets:
@@ -194,17 +345,17 @@ class JsonReceiver:
                                         f"[ERROR] Unbalanced brackets: [ {open_brackets} vs ] {close_brackets}"
                                     )
                                     self._log("[ERROR] JSON incomplete or corrupted")
-                                    after_end = buffer[end_idx:]
-                                    self._log(
-                                        f"[DEBUG] Data after [END] ({len(after_end)} bytes): {repr(after_end[:200])}"
-                                    )
-                                    debug_file = f"debug_json_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-                                    with open(debug_file, "wb") as f:
-                                        f.write(json_data)
-                                    self._log(f"Raw data saved to: {debug_file}")
+                                    self._save_debug_file(json_data, buffer, end_idx)
                                     return False
 
                                 parsed_json = json.loads(json_str)
+
+                                # Deduplikasi event
+                                parsed_json = self._filter_duplicate_events(parsed_json)
+
+                                # Jika setelah deduplikasi tidak ada event tersisa,
+                                # tetap simpan file agar ground station tahu chunk diterima
+                                # (dengan event_count = 0)
 
                                 # Simpan ke file dengan timestamp
                                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -222,7 +373,6 @@ class JsonReceiver:
                                 )
                                 self._log(f"  Time: {elapsed:.2f} seconds")
 
-                                # Panggil callback opsional (misal untuk update status label)
                                 if on_saved:
                                     on_saved(filename)
 
@@ -230,10 +380,7 @@ class JsonReceiver:
 
                             except json.JSONDecodeError as e:
                                 self._log(f"✗ Invalid JSON format: {e}")
-                                debug_file = f"debug_json_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-                                with open(debug_file, "wb") as f:
-                                    f.write(json_data)
-                                self._log(f"Raw data saved to: {debug_file} for debugging")
+                                self._save_debug_file(json_data, None, None)
                                 return False
 
                 time.sleep(0.1)
@@ -254,7 +401,31 @@ class JsonReceiver:
             self._log(f"[ERROR] Failed to receive JSON: {e}")
             self._log(f"Traceback: {traceback.format_exc()}")
             return False
-        finally:
-            # Selalu bersihkan router saat selesai
-            self.file_transfer.clear_json_router()
-            self._json_buffer = bytearray()
+
+    # ------------------------------------------------------------------
+    # Debug helper
+    # ------------------------------------------------------------------
+
+    def _save_debug_file(self, json_data: bytes, buffer: bytes | None, end_idx: int | None):
+        """Simpan raw data ke file debug untuk analisis."""
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        debug_file = f"debug_json_{ts}.txt"
+        try:
+            with open(debug_file, "wb") as f:
+                f.write(json_data)
+            self._log(f"Raw data saved to: {debug_file}")
+        except Exception:
+            pass
+
+        if buffer is not None and end_idx is not None:
+            after_end = buffer[end_idx:]
+            self._log(
+                f"[DEBUG] Data after [END] ({len(after_end)} bytes): {repr(after_end[:200])}"
+            )
+            buffer_file = f"debug_buffer_{ts}.txt"
+            try:
+                with open(buffer_file, "wb") as f:
+                    f.write(buffer)
+                self._log(f"Full buffer saved to: {buffer_file}")
+            except Exception:
+                pass

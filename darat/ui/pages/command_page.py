@@ -40,6 +40,7 @@ class CommandPage(QWidget):
         self._serial  = serial_bridge
         self._ft      = file_transfer
         self._jr      = json_receiver
+        self._rx_thread: threading.Thread | None = None  # Thread penerimaan JSON continuous
         self._build_ui()
 
     def _build_ui(self):
@@ -136,28 +137,36 @@ class CommandPage(QWidget):
 
     def _start_record(self):
         self._serial.send_command(CMD_START_RECORD)
-        self._set_status(f"Recording… ({CMD_START_RECORD} sent)")
+        self._set_status(f"Recording\u2026 ({CMD_START_RECORD} sent)")
         self.log_message.emit("Recording started", "INFO")
         self.recording_started.emit()
 
-    def _stop_record(self):
-        self._serial.send_command(CMD_STOP_RECORD)
-        self._set_status(f"Recording stopped — waiting for JSON… ({CMD_STOP_RECORD} sent)")
-        self.log_message.emit("Recording stopped — waiting for JSON file", "WARNING")
-        self.recording_stopped.emit()
+        # Reset state deduplikasi dan mulai listener JSON continuous
+        self._jr.reset()
 
         def _on_json_saved(filename: str):
-            self._set_status(f"JSON received: {filename}")
+            self._set_status(f"JSON diterima: {filename}")
             self.log_message.emit(f"JSON file received: {filename}", "INFO")
             self.json_received.emit(filename)
 
-        t = threading.Thread(
+        self._rx_thread = threading.Thread(
             target=self._jr.receive_json,
-            kwargs={"on_saved": _on_json_saved},
+            kwargs={"on_saved": _on_json_saved, "continuous": True},
             daemon=True,
+            name="JsonReceiver-Continuous",
         )
-        t.start()
-        self.log_message.emit("JSON reception thread started", "DEBUG")
+        self._rx_thread.start()
+        self.log_message.emit("Continuous JSON receiver thread started", "DEBUG")
+
+    def _stop_record(self):
+        # Hentikan loop continuous receiver (berhenti setelah paket saat ini selesai)
+        self._jr.stop_continuous()
+
+        self._serial.send_command(CMD_STOP_RECORD)
+        self._set_status(f"Recording stopped — menunggu data terakhir… ({CMD_STOP_RECORD} sent)")
+        self.log_message.emit("Recording stopped — menunggu JSON file terakhir", "WARNING")
+        self.recording_stopped.emit()
+        self.log_message.emit("JSON receiver akan berhenti setelah data terakhir diterima", "DEBUG")
 
     def _process(self):
         self._serial.send_command(CMD_PROCESS)

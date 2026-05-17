@@ -1,6 +1,10 @@
 """
 Audio Recording Module
-Mengelola recording audio multi-channel via arecord
+Mengelola recording audio multi-channel via arecord.
+
+Mode streaming baru: arecord mengeluarkan raw PCM bytes ke stdout pipe,
+sehingga controller dapat mengambil window overlap dari byte stream tanpa
+harus memutus proses recording.
 """
 
 import subprocess
@@ -8,7 +12,7 @@ import shlex
 import re
 import numpy as np
 from .config import (
-    CHANNELS, 
+    CHANNELS,
     DEVICE_PROFILES,
     get_take_indices
 )
@@ -16,12 +20,12 @@ from .config_manager import get_global_config_manager
 
 
 class AudioRecorder:
-    """Mengelola recording audio multi-channel via arecord dengan probing capability"""
-    
+    """Mengelola recording audio multi-channel via arecord dengan streaming RAW PCM."""
+
     def __init__(self, device=None, rate=None):
         """
         Initialize audio recorder
-        
+
         Args:
             device (str): ALSA device identifier (e.g., "hw:2,0")
             rate (int): Sample rate dalam Hz
@@ -31,18 +35,25 @@ class AudioRecorder:
         self.rate = rate if rate is not None else cfg.get("sample_rate", 48000)
         self.process = None
         self.output_path = None
-        
+
         # Active configuration
-        cfg = get_global_config_manager().get_config()
         active_prof = cfg.get("active_profile", "H8")
         self.active_profile_name = active_prof
         self.active_channels = CHANNELS
         self.active_format = "S24_3LE"
         self.active_take_indices = get_take_indices(active_prof, cfg.get("num_mics_h8", 6))
-        
+
+        # Mapping format → bytes per sample (raw PCM)
+        self._bytes_per_sample_map = {
+            "S24_3LE": 3,
+            "S32_LE":  4,
+            "S16_LE":  2,
+            "FLOAT_LE": 4,
+        }
+
         # Configure initial profile
         self.configure_profile(active_prof)
-        
+
     def configure_profile(self, profile_name):
         """Set active profile"""
         if profile_name in DEVICE_PROFILES:
@@ -57,6 +68,10 @@ class AudioRecorder:
             print(f"[RECORDER] Profile set to {profile_name} ({num_mics} mics)")
         else:
             print(f"[WARNING] Profile {profile_name} not found, using defaults")
+
+    # ------------------------------------------------------------------
+    # Device probing
+    # ------------------------------------------------------------------
 
     def _extract_format_from_line(self, line):
         """Extract format token from line starting with -"""
@@ -84,18 +99,16 @@ class AudioRecorder:
 
         for line in output.splitlines():
             l = line.strip()
-            
-            # Parse formats
+
             fmt = self._extract_format_from_line(l)
             if fmt:
                 formats.append(fmt)
                 continue
 
-            # Parse channels
             ch = self._extract_channels_from_line(l)
             if ch is not None:
                 max_ch = ch
-                        
+
         return formats, max_ch
 
     def probe_device(self):
@@ -119,164 +132,189 @@ class AudioRecorder:
 
         formats, max_ch = self._parse_arecord_dump(out)
 
-        # Update Format
         if formats:
             preferred = ["S24_3LE", "S32_LE", "FLOAT_LE", "S16_LE"]
-            # Coba cari format profile di daftar available
             if self.active_format in formats:
                 chosen_format = self.active_format
             else:
-                # Jika tidak ada, cari yang preferred
                 chosen_format = next((p for p in preferred if p in formats), formats[0])
-            
+
             print(f"[RECORDER] Device supports: {formats}. Choosing: {chosen_format}")
             self.active_format = chosen_format
         else:
             print("[RECORDER] Could not detect formats, keeping default")
 
-        # Update Channels
         if max_ch is not None and self.active_channels > max_ch:
             print(f"[RECORDER] Device max channels {max_ch} < requested {self.active_channels}. Adjusting.")
             self.active_channels = max_ch
-        
-        # Update Take Indices if needed
+
         self._adjust_take_indices()
 
     def _adjust_take_indices(self):
         """Adjust take_indices jika channel yang tersedia kurang dari yang diminta"""
         cfg = get_global_config_manager().get_config()
         num_mics_h8 = cfg.get("num_mics_h8", 6)
-        
+
         profile = DEVICE_PROFILES.get(self.active_profile_name, DEVICE_PROFILES["H6E"])
         num_mics = num_mics_h8 if self.active_profile_name == "H8" else profile.get("num_mics", 4)
-        
-        # Ambil indices yang sesuai dengan jumlah mic yang dikonfigurasi
+
         profile_indices = get_take_indices(self.active_profile_name, num_mics_h8)
-        
-        # Jika semua index profile ada dalam range channel aktif, gunakan itu
+
         if all(idx < self.active_channels for idx in profile_indices):
             self.active_take_indices = profile_indices
         else:
-            # Jika tidak, buat indices baru yang tersebar merata
             num_wanted = num_mics
             if self.active_channels < num_wanted:
                 self.active_take_indices = tuple(range(self.active_channels))
             else:
-                self.active_take_indices = tuple(np.linspace(0, self.active_channels - 1, num=num_wanted, dtype=int))
-            
+                self.active_take_indices = tuple(
+                    np.linspace(0, self.active_channels - 1, num=num_wanted, dtype=int)
+                )
             print(f"[RECORDER] Adjusted take_indices to {self.active_take_indices}")
 
-    def start_recording(self, output_path):
+    # ------------------------------------------------------------------
+    # Streaming recording (pipe stdout RAW PCM)
+    # ------------------------------------------------------------------
+
+    @property
+    def bytes_per_frame(self) -> int:
+        """Jumlah byte per frame (satu sample dari semua channel)."""
+        bps = self._bytes_per_sample_map.get(self.active_format, 3)
+        return bps * self.active_channels
+
+    def bytes_for_duration(self, duration_sec: float) -> int:
+        """Konversi durasi (detik) → jumlah byte RAW PCM yang diharapkan."""
+        return int(duration_sec * self.rate) * self.bytes_per_frame
+
+    def start_recording(self, output_path=None):
         """
-        Mulai recording tanpa durasi (continuous)
-        
+        Mulai recording tanpa durasi (continuous streaming ke stdout).
+
         Args:
-            output_path (str): Path untuk menyimpan file WAV
-            
+            output_path: Tidak digunakan lagi (opsional, diabaikan). Dipertahankan
+                         untuk kompatibilitas signature lama.
+
         Returns:
             bool: True jika berhasil, False jika gagal
         """
         if self.process is not None and self.process.poll() is None:
             print("[ERROR] Recording sudah berjalan")
             return False
-            
+
         # Probe device dulu sebelum start
         self.probe_device()
-            
-        self.output_path = output_path
+
+        self.output_path = None  # Streaming mode: tidak ada output file
+
+        # arecord dengan RAW output ke stdout (tanpa file output)
+        # -t raw  → output format raw PCM tanpa header WAV
+        # Output diarahkan ke pipe stdout untuk dibaca Python
         cmd = [
             "arecord",
             "-D", self.device,
             "-f", self.active_format,
             "-r", str(self.rate),
             "-c", str(self.active_channels),
-            output_path
+            "-t", "raw",   # Raw PCM, tanpa header
+            "-q",          # Quiet mode (suppress progress messages)
         ]
-        
+
         try:
-            print(f"[RECORDING] Running: {' '.join(shlex.quote(x) for x in cmd)}")
-            # Redirect stdout/stderr agar tidak mengganggu output program
+            print(f"[RECORDING] Running: {' '.join(shlex.quote(x) for x in cmd)} (→ stdout pipe)")
             self.process = subprocess.Popen(
-                cmd, 
-                stdout=subprocess.PIPE, 
+                cmd,
+                stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
             )
-            
-            # VERIFIKASI: Tunggu sebentar untuk memastikan process tidak crash
+
+            # Verifikasi: tunggu sebentar untuk memastikan process tidak crash
             import time
-            time.sleep(1.0)  # Tunggu 1 detik
-            
+            time.sleep(1.0)
+
             if self.process.poll() is not None:
-                # Process mati segera setelah start
                 err_msg = "Unknown error"
                 if self.process.stderr:
                     try:
-                        # Baca sisa stderr
-                        err_msg = self.process.stderr.read().decode('utf-8').strip()
+                        err_msg = self.process.stderr.read().decode("utf-8").strip()
                     except Exception:
                         pass
-                
                 print(f"[ERROR] Recording process died immediately. Exit code: {self.process.returncode}")
                 print(f"[ARECORD ERROR] {err_msg}")
                 self.process = None
                 return False
-                
+
             return True
+
         except Exception as e:
             print(f"[ERROR] Failed to start recording: {e}")
             return False
-    
+
+    def read_raw_bytes(self, num_bytes: int) -> bytes:
+        """
+        Baca sejumlah byte tepat dari stdout arecord.
+
+        Args:
+            num_bytes: Jumlah byte yang ingin dibaca.
+
+        Returns:
+            bytes: Data PCM mentah (panjang dapat < num_bytes jika proses berhenti).
+        """
+        if self.process is None or self.process.stdout is None:
+            return b""
+        try:
+            return self.process.stdout.read(num_bytes)
+        except Exception as e:
+            print(f"[RECORDER] read_raw_bytes error: {e}")
+            return b""
+
     def stop_recording(self):
         """
-        Stop recording dan tunggu proses selesai
-        
+        Stop recording dan tunggu proses selesai.
+
         Returns:
             bool: True jika berhasil stop, False jika gagal
         """
         if self.process is None or self.process.poll() is not None:
             print("[WARNING] Recording tidak aktif")
             return False
-            
+
         try:
             cfg = get_global_config_manager().get_config()
             terminate_timeout = cfg.get("arecord_terminate_timeout", 3)
-            
-            # Terminate process dengan gentle signal
+
             self.process.terminate()
             self.process.wait(timeout=terminate_timeout)
             print("[RECORDING] Stopped")
         except subprocess.TimeoutExpired:
-            # Jika tidak terminate dalam timeout, paksa kill
             self.process.kill()
             print("[RECORDING] Force killed")
         except Exception as e:
             print(f"[ERROR] Failed to stop recording: {e}")
             return False
-            
-        # Check stderr for errors
+
         if self.process.stderr:
             try:
-                err = self.process.stderr.read().decode('utf-8')
+                err = self.process.stderr.read().decode("utf-8")
                 if err:
                     print(f"[ARECORD STDERR]\n{err}")
             except Exception:
                 pass
-                
+
         return True
-    
+
     def is_recording(self):
         """
-        Cek apakah sedang recording
-        
+        Cek apakah sedang recording.
+
         Returns:
             bool: True jika sedang recording, False jika tidak
         """
         return self.process is not None and self.process.poll() is None
-    
+
     def get_status(self):
         """
-        Dapatkan status recording
-        
+        Dapatkan status recording.
+
         Returns:
             dict: Dictionary berisi status recording
         """
@@ -284,7 +322,7 @@ class AudioRecorder:
         num_mics_h8 = cfg.get("num_mics_h8", 6)
         profile = DEVICE_PROFILES.get(self.active_profile_name, {})
         num_mics = num_mics_h8 if self.active_profile_name == "H8" else profile.get("num_mics", 4)
-        
+
         return {
             "is_recording": self.is_recording(),
             "output_path": self.output_path,
@@ -294,10 +332,10 @@ class AudioRecorder:
             "format": self.active_format,
             "profile": self.active_profile_name,
             "num_mics": num_mics,
-            "take_indices": self.active_take_indices
+            "take_indices": self.active_take_indices,
+            "bytes_per_frame": self.bytes_per_frame,
         }
-    
+
     def get_active_take_indices(self):
         """Return indices channel yang aktif digunakan"""
         return self.active_take_indices
-

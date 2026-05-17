@@ -22,13 +22,15 @@ def print_header():
     op_mode = cfg.get("operation_mode", "OFFLINE")
     
     print("="*60)
-    print("DRONE AUDIO DETECTION SYSTEM")
+    print("DRONE AUDIO DETECTION SYSTEM — Continuous Streaming Mode")
     print("="*60)
     print(f"Operation Mode: {op_mode}")
     if op_mode == "ONLINE":
         print(f"Serial Port: {cfg.get('serial_port')}")
         print(f"Baud Rate: {cfg.get('baud_rate')}")
     print(f"Sample Rate: {cfg.get('sample_rate')} Hz")
+    print(f"Chunk Duration: {cfg.get('chunk_duration_sec', 5.0)}s  |  Overlap: {cfg.get('chunk_overlap_sec', 1.0)}s")
+    print(f"Keep Audio: {cfg.get('keep_audio_files', True)}")
     print(f"Filtering: {'Enabled' if NOISEREDUCE_AVAILABLE else 'Disabled'}")
     print(f"Output Dir: {cfg.get('base_output_dir')}")
     print("="*60)
@@ -83,12 +85,8 @@ def process_command(command, audio_system, serial_handler=None, config_manager=N
         response = f"OK:{message}" if success else f"ERROR:{message}"
         
     elif command == "STOP_REC":
-        success, message, events = audio_system.stop_and_process()
-        if success:
-            event_count = len(events) if events else 0
-            response = f"OK:{event_count} events detected"
-        else:
-            response = f"ERROR:{message}"
+        success, message, _ = audio_system.stop_and_process()
+        response = f"OK:{message}" if success else f"ERROR:{message}"
             
     elif command == "STATUS":
         success, status, _ = audio_system.get_status()
