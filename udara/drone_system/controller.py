@@ -381,7 +381,7 @@ class DroneAudioSystem:
                 # Salin sign byte (MSB dari S24)
                 padded[:, 3] = np.where(arr[:, 2] >= 0x80, 0xFF, 0x00).astype(np.uint8)
                 samples_i32 = padded.view(np.int32).reshape(-1)
-                data = samples_i32.reshape(n_frames, n_channels).astype(np.float32) / 2**31
+                data = samples_i32.reshape(n_frames, n_channels).astype(np.float32) / (2**23)
             elif bps == 2:
                 n_frames = len(raw_bytes) // bpf
                 usable = n_frames * bpf
