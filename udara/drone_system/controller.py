@@ -14,6 +14,7 @@ import io
 import time
 import uuid
 import threading
+import queue
 import shutil
 import numpy as np
 import soundfile as sf
@@ -55,8 +56,9 @@ class DroneAudioSystem:
 
         # Threading state
         self._stream_thread: threading.Thread | None = None
+        self._worker_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
-        self._chunk_lock = threading.Lock()  # Mencegah dua chunk diproses bersamaan
+        self.chunk_queue = queue.Queue(maxsize=10) # Queue untuk membatasi worker thread
 
         cfg = get_global_config_manager().get_config()
         self.base_output_dir = cfg.get("base_output_dir", "drone_recordings")
@@ -93,14 +95,29 @@ class DroneAudioSystem:
 
         self.recording_start_time = time.time()
         self._stop_event.clear()
+        
+        # Bersihkan sisa queue dari sesi sebelumnya jika ada
+        while not self.chunk_queue.empty():
+            try:
+                self.chunk_queue.get_nowait()
+            except queue.Empty:
+                break
 
-        # Jalankan thread pemrosesan streaming
+        # Jalankan thread pemrosesan streaming (Producer)
         self._stream_thread = threading.Thread(
             target=self._stream_processor_thread,
             daemon=True,
             name="StreamProcessor"
         )
         self._stream_thread.start()
+        
+        # Jalankan thread worker (Consumer)
+        self._worker_thread = threading.Thread(
+            target=self._chunk_worker_loop,
+            daemon=True,
+            name="ChunkWorker"
+        )
+        self._worker_thread.start()
 
         return True, f"Recording started: {session_id}"
 
@@ -125,6 +142,13 @@ class DroneAudioSystem:
         # Tunggu thread selesai memproses sisa data (max 60 detik)
         if self._stream_thread and self._stream_thread.is_alive():
             self._stream_thread.join(timeout=60)
+            
+        # Sinyal worker thread untuk tutup buku (Sentinel)
+        self.chunk_queue.put(None)
+        
+        # Tunggu worker thread memproses sisa antrian (max 60 detik)
+        if self._worker_thread and self._worker_thread.is_alive():
+            self._worker_thread.join(timeout=60)
 
         self._reset_state()
         return True, "Recording stopped and processed", None
@@ -203,12 +227,11 @@ class DroneAudioSystem:
                 # Pertahankan overlap_bytes terakhir untuk window berikutnya
                 ring_buffer = bytearray(ring_buffer[chunk_bytes:])
 
-                # Proses secara non-blocking dengan thread terpisah agar proses read stdout (arecord) tidak terhenti
-                threading.Thread(
-                    target=self._process_chunk_bytes,
-                    args=(window, bpf, sample_rate),
-                    daemon=True
-                ).start()
+                # Masukkan ke antrian non-blocking. Jika queue penuh, buang chunk
+                try:
+                    self.chunk_queue.put_nowait((window, bpf, sample_rate))
+                except queue.Full:
+                    print("[WARNING] Worker queue is FULL (Max 10). Dropping chunk ini agar streamer tidak freeze.")
 
             # Jika stop_event aktif, selesaikan sisa buffer lalu keluar
             if self._stop_event.is_set() and not data:
@@ -219,15 +242,40 @@ class DroneAudioSystem:
             min_bytes = self.recorder.bytes_for_duration(0.5)  # minimal 0.5 detik
             if len(ring_buffer) >= min_bytes:
                 print(f"[STREAM] Processing final chunk ({len(ring_buffer)} bytes)")
-                self._process_chunk_bytes(bytes(ring_buffer), bpf, sample_rate)
+                try:
+                    self.chunk_queue.put_nowait((bytes(ring_buffer), bpf, sample_rate))
+                except queue.Full:
+                    print("[WARNING] Worker queue is FULL. Dropping final chunk.")
             else:
                 print(f"[STREAM] Sisa buffer terlalu kecil ({len(ring_buffer)} bytes), diabaikan.")
 
         print("[STREAM] Stream processor thread selesai.")
 
     # ------------------------------------------------------------------
-    # Chunk processing
+    # Chunk processing (Worker Thread)
     # ------------------------------------------------------------------
+    
+    def _chunk_worker_loop(self):
+        """
+        Consumer Thread: Mengambil item dari queue dan memprosesnya secara sinkron berurutan.
+        Berhenti ketika menerima item `None` (Sentinel value).
+        """
+        while True:
+            item = self.chunk_queue.get()
+            if item is None:
+                # Sentinel diterima, tutup buku
+                print("[WORKER] Sentinel diterima, chunk worker thread selesai.")
+                self.chunk_queue.task_done()
+                break
+                
+            window, bpf, sample_rate = item
+            try:
+                # Disini jalankan pemrosesan chunk 
+                self._process_chunk_bytes(window, bpf, sample_rate)
+            except Exception as e:
+                print(f"[WORKER] Error pada chunk_worker_loop: {e}")
+            finally:
+                self.chunk_queue.task_done()
 
     def _process_chunk_bytes(self, raw_bytes: bytes, bpf: int, sample_rate: int):
         """
@@ -238,123 +286,122 @@ class DroneAudioSystem:
             bpf:         Bytes per frame (bytes_per_sample × num_channels)
             sample_rate: Sample rate dalam Hz
         """
-        with self._chunk_lock:
-            cfg = get_global_config_manager().get_config()
-            active_indices = self.recorder.get_active_take_indices()
-            keep_audio = cfg.get("keep_audio_files", True)
+        cfg = get_global_config_manager().get_config()
+        active_indices = self.recorder.get_active_take_indices()
+        keep_audio = cfg.get("keep_audio_files", True)
 
-            # Buat subfolder chunk dengan timestamp
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-            chunk_name = f"chunk_{ts}"
-            chunk_dir = os.path.join(self.chunks_dir, chunk_name)
-            os.makedirs(chunk_dir, exist_ok=True)
+        # Buat subfolder chunk dengan timestamp
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        chunk_name = f"chunk_{ts}"
+        chunk_dir = os.path.join(self.chunks_dir, chunk_name)
+        os.makedirs(chunk_dir, exist_ok=True)
 
-            chunk_wav_path = os.path.join(chunk_dir, "raw.wav")
+        chunk_wav_path = os.path.join(chunk_dir, "raw.wav")
 
-            try:
-                # 1. Konversi raw bytes → numpy array → WAV
-                data_np = self._raw_bytes_to_ndarray(raw_bytes, bpf, self.recorder.active_channels)
-                if data_np is None or data_np.shape[0] == 0:
-                    print(f"[CHUNK] Konversi bytes gagal, skip chunk {chunk_name}")
-                    shutil.rmtree(chunk_dir, ignore_errors=True)
-                    return
+        try:
+            # 1. Konversi raw bytes → numpy array → WAV
+            data_np = self._raw_bytes_to_ndarray(raw_bytes, bpf, self.recorder.active_channels)
+            if data_np is None or data_np.shape[0] == 0:
+                print(f"[CHUNK] Konversi bytes gagal, skip chunk {chunk_name}")
+                shutil.rmtree(chunk_dir, ignore_errors=True)
+                return
 
-                self._write_wav(chunk_wav_path, data_np, sample_rate)
-                duration = data_np.shape[0] / sample_rate
-                print(f"\n[CHUNK] Processing {chunk_name} ({duration:.2f}s)")
+            self._write_wav(chunk_wav_path, data_np, sample_rate)
+            duration = data_np.shape[0] / sample_rate
+            print(f"\n[CHUNK] Processing {chunk_name} ({duration:.2f}s)")
 
-                # 2. Extract & filter channels
-                original_files, data, sr, actual_duration = self.processor.extract_channels(
-                    chunk_wav_path,
-                    chunk_dir,
-                    sr_override=sample_rate,
-                    channel_indices=active_indices
-                )
-                if not original_files:
-                    print(f"[CHUNK] Ekstraksi channel gagal: {chunk_name}")
-                    if not keep_audio:
-                        shutil.rmtree(chunk_dir, ignore_errors=True)
-                    return
-
-                filtered_files, filtered_data = self.processor.filter_channels(
-                    data, sr, chunk_dir, channel_indices=active_indices
-                )
-
-                # 3. Detect events
-                events = self.detector.detect_events(chunk_dir)
-
-                # 4. Cut event clips
-                processed_events = self.processor.save_event_clips(
-                    filtered_data, sr, events, chunk_dir,
-                    padding=cfg.get("event_padding_sec", EVENT_PADDING_SEC),
-                    channel_indices=active_indices
-                )
-
-                # 5. Calculate TDOA
-                tdoa_results = []
-                for event in processed_events:
-                    start_sample = max(0, int(event["padded_start"] * sr))
-                    end_sample = min(filtered_data.shape[0], int(event["padded_end"] * sr))
-                    event_audio = filtered_data[start_sample:end_sample, :]
-                    event_tdoa = calculate_all_tdoa(event_audio, sr, channel_indices=active_indices)
-                    tdoa_results.append({
-                        "event_number": event["event_number"],
-                        # Waktu absolut dihitung dari awal session untuk deduplikasi di darat
-                        "chunk_timestamp": ts,
-                        "event_start_in_chunk": event["original_start"],
-                        "event_end_in_chunk": event["original_end"],
-                        "tdoa": event_tdoa
-                    })
-
-                # 6. Simpan TDOA JSON
-                rec_status = self.recorder.get_status()
-                profile_name = rec_status.get("profile", "Unknown")
-                profile = DEVICE_PROFILES.get(profile_name, {})
-                num_mics = profile.get("num_mics", 4)
-                num_tdoa_pairs = num_mics * (num_mics - 1) // 2
-
-                extra_info = {
-                    "type": "TDOA_RESULTS",
-                    "chunk_name": chunk_name,
-                    "chunk_duration_sec": duration,
-                    "device_profile": profile_name,
-                    "format": rec_status.get("format", "Unknown"),
-                    "channels": rec_status.get("channels", 0),
-                    "num_mics": num_mics,
-                    "num_tdoa_pairs": num_tdoa_pairs,
-                }
-
-                tdoa_json_path = os.path.join(chunk_dir, "tdoa.json")
-                log_ts = datetime.now().strftime(LOG_TIMESTAMP_FORMAT)
-                DataLogger.save_events_json(
-                    tdoa_json_path,
-                    chunk_name,
-                    log_ts,
-                    tdoa_results,
-                    duration,
-                    sr,
-                    extra_info=extra_info
-                )
-
-                print(f"[CHUNK] {len(events)} event(s), TDOA saved to {tdoa_json_path}")
-
-                # 7. Kirim ke ground (hanya ONLINE mode)
-                if cfg.get("operation_mode", "OFFLINE") == "ONLINE":
-                    if self.comms.send_file(tdoa_json_path):
-                        print(f"[CHUNK] TDOA sent successfully.")
-                    else:
-                        print(f"[CHUNK] Failed to send TDOA.")
-                else:
-                    print(f"[CHUNK] OFFLINE mode — skip serial transmission")
-
-                # 8. Hapus file audio jika dikonfigurasi
+            # 2. Extract & filter channels
+            original_files, data, sr, actual_duration = self.processor.extract_channels(
+                chunk_wav_path,
+                chunk_dir,
+                sr_override=sample_rate,
+                channel_indices=active_indices
+            )
+            if not original_files:
+                print(f"[CHUNK] Ekstraksi channel gagal: {chunk_name}")
                 if not keep_audio:
-                    self._cleanup_audio_files(chunk_dir, tdoa_json_path)
+                    shutil.rmtree(chunk_dir, ignore_errors=True)
+                return
 
-            except Exception as e:
-                import traceback
-                print(f"[ERROR] Chunk processing failed: {e}")
-                traceback.print_exc()
+            filtered_files, filtered_data = self.processor.filter_channels(
+                data, sr, chunk_dir, channel_indices=active_indices
+            )
+
+            # 3. Detect events
+            events = self.detector.detect_events(chunk_dir)
+
+            # 4. Cut event clips
+            processed_events = self.processor.save_event_clips(
+                filtered_data, sr, events, chunk_dir,
+                padding=cfg.get("event_padding_sec", EVENT_PADDING_SEC),
+                channel_indices=active_indices
+            )
+
+            # 5. Calculate TDOA
+            tdoa_results = []
+            for event in processed_events:
+                start_sample = max(0, int(event["padded_start"] * sr))
+                end_sample = min(filtered_data.shape[0], int(event["padded_end"] * sr))
+                event_audio = filtered_data[start_sample:end_sample, :]
+                event_tdoa = calculate_all_tdoa(event_audio, sr, channel_indices=active_indices)
+                tdoa_results.append({
+                    "event_number": event["event_number"],
+                    # Waktu absolut dihitung dari awal session untuk deduplikasi di darat
+                    "chunk_timestamp": ts,
+                    "event_start_in_chunk": event["original_start"],
+                    "event_end_in_chunk": event["original_end"],
+                    "tdoa": event_tdoa
+                })
+
+            # 6. Simpan TDOA JSON
+            rec_status = self.recorder.get_status()
+            profile_name = rec_status.get("profile", "Unknown")
+            profile = DEVICE_PROFILES.get(profile_name, {})
+            num_mics = profile.get("num_mics", 4)
+            num_tdoa_pairs = num_mics * (num_mics - 1) // 2
+
+            extra_info = {
+                "type": "TDOA_RESULTS",
+                "chunk_name": chunk_name,
+                "chunk_duration_sec": duration,
+                "device_profile": profile_name,
+                "format": rec_status.get("format", "Unknown"),
+                "channels": rec_status.get("channels", 0),
+                "num_mics": num_mics,
+                "num_tdoa_pairs": num_tdoa_pairs,
+            }
+
+            tdoa_json_path = os.path.join(chunk_dir, "tdoa.json")
+            log_ts = datetime.now().strftime(LOG_TIMESTAMP_FORMAT)
+            DataLogger.save_events_json(
+                tdoa_json_path,
+                chunk_name,
+                log_ts,
+                tdoa_results,
+                duration,
+                sr,
+                extra_info=extra_info
+            )
+
+            print(f"[CHUNK] {len(events)} event(s), TDOA saved to {tdoa_json_path}")
+
+            # 7. Kirim ke ground (hanya ONLINE mode)
+            if cfg.get("operation_mode", "OFFLINE") == "ONLINE":
+                if self.comms.send_file(tdoa_json_path):
+                    print(f"[CHUNK] TDOA sent successfully.")
+                else:
+                    print(f"[CHUNK] Failed to send TDOA.")
+            else:
+                print(f"[CHUNK] OFFLINE mode — skip serial transmission")
+
+            # 8. Hapus file audio jika dikonfigurasi
+            if not keep_audio:
+                self._cleanup_audio_files(chunk_dir, tdoa_json_path)
+
+        except Exception as e:
+            import traceback
+            print(f"[ERROR] Chunk processing failed: {e}")
+            traceback.print_exc()
 
     # ------------------------------------------------------------------
     # Helpers
