@@ -221,7 +221,13 @@ def solve_tdoa_least_squares(mic_positions, tdoa_data):
     mic_names = sorted(mic_positions.keys())
     n_mics = len(mic_names)
 
-    mic_positions_list = [mic_positions[name] for name in mic_names]
+    mic_positions_list = []
+    for name in mic_names:
+        pos = mic_positions[name]
+        if isinstance(pos, dict):
+            mic_positions_list.append([pos['x'], pos['y'], pos['z']])
+        else:
+            mic_positions_list.append(pos)
 
     tdoa_measurements = []
     for i in range(1, n_mics):
@@ -299,12 +305,13 @@ def process_event_tdoa(event_data, mic_positions, method="bucher-misra"):
         for perm in mic_permutations:
             total_attempts += 1
             m_i, m_j, m_k, m_l = perm
-            stations_xyz = [
-                mic_positions[m_i],
-                mic_positions[m_j],
-                mic_positions[m_k],
-                mic_positions[m_l],
-            ]
+            stations_xyz = []
+            for m in (m_i, m_j, m_k, m_l):
+                pos = mic_positions[m]
+                if isinstance(pos, dict):
+                    stations_xyz.append([pos['x'], pos['y'], pos['z']])
+                else:
+                    stations_xyz.append(pos)
 
             try:
                 Rij = tdoa_data.get(f"{m_i}-{m_j}", -tdoa_data.get(f"{m_j}-{m_i}", 0))
@@ -378,7 +385,10 @@ def save_results_to_file(data, events_results, mic_positions, output_file):
     with open(output_file, "w", encoding="utf-8") as f:
         f.write("# MICROPHONE POSITIONS\n")
         for mic_name, pos in mic_positions.items():
-            f.write(f"{mic_name} = [{pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}]\n")
+            if isinstance(pos, dict):
+                f.write(f"{mic_name} = [{pos['x']:.2f}, {pos['y']:.2f}, {pos['z']:.2f}]\n")
+            else:
+                f.write(f"{mic_name} = [{pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}]\n")
         f.write("\n# EVENT POSITIONS\n")
 
         for result in events_results:
