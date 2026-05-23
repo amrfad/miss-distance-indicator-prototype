@@ -76,7 +76,7 @@ class RestClient(QObject):
 
     def __init__(
         self,
-        drone_ip:    str = "192.168.1.100",
+        drone_ip:    str = "10.99.99.2",
         drone_port:  int = 5000,
         ground_port: int = 5001,
         parent=None,

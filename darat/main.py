@@ -14,6 +14,14 @@ def main():
     from PySide6.QtWidgets import QApplication
     from PySide6.QtGui import QFont
     from darat.ui.dashboard import MainDashboard
+    from darat.network_setup import init_network
+
+    # Inisialisasi network auto-config sebelum GUI berjalan
+    print("[INIT] Mempersiapkan Automasi Jaringan Darat...")
+    if init_network():
+        import time
+        print("[INIT] Menunggu 2 detik agar adapter jaringan stabil...")
+        time.sleep(2.0)
 
     app = QApplication(sys.argv)
     app.setApplicationName("Miss Distance Indicator")

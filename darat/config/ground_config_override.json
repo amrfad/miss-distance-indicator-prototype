@@ -3,7 +3,7 @@
   "serial_timeout": 1.0,
   "serial_port": "COM3",
   "use_tcp": false,
-  "raspi_ip": "raspberrypi.local",
+  "raspi_ip": "10.99.99.2",
   "tcp_port": 5000,
   "speed_of_sound": 343.0,
   "cluster_eps": 1.0,
