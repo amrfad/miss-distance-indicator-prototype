@@ -1,0 +1,23 @@
+[Unit]
+Description=Miss Distance Indicator (MDI) - Drone System
+After=network.target
+
+[Service]
+Type=simple
+User=root
+# Harus dijalankan sebagai root (agar network.py bisa set IP statis 10.99.99.2) 
+# tetapi path repository berada di folder user pi.
+WorkingDirectory=/home/pi/Documents/mdi-apps/udara
+
+# Menggunakan Python virtual environment secara langsung
+ExecStart=/home/pi/Documents/mdi-apps/udara/.venv/bin/python run_drone_system.py
+
+# Auto-Restart
+Restart=on-failure
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
