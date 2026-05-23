@@ -32,7 +32,7 @@ class LaptopConfigPanel(QWidget):
         "baud_rate": 230400,
         "serial_timeout": 1.0,
         "use_tcp": False,
-        "raspi_ip": "192.168.1.100",
+        "raspi_ip": "10.99.99.2",
         "tcp_port": 5000,
         "speed_of_sound": 343.0,
         "cluster_eps": 1.0,
@@ -135,7 +135,7 @@ class LaptopConfigPanel(QWidget):
         form.addRow(self.use_tcp)
 
         self.raspi_ip = QLineEdit()
-        self.raspi_ip.setPlaceholderText("192.168.1.100")
+        self.raspi_ip.setPlaceholderText("10.99.99.2")
         form.addRow("Drone IP Address:", self.raspi_ip)
 
         self.tcp_port = QSpinBox()
@@ -273,7 +273,7 @@ class LaptopConfigPanel(QWidget):
         self.baud_rate.setCurrentText(str(c.get("baud_rate", 230400)))
         self.serial_timeout.setValue(c.get("serial_timeout", 1.0))
         self.use_tcp.setChecked(c.get("use_tcp", False))
-        self.raspi_ip.setText(c.get("raspi_ip", "192.168.1.100"))
+        self.raspi_ip.setText(c.get("raspi_ip", "10.99.99.2"))
         self.tcp_port.setValue(c.get("tcp_port", 5000))
         self.speed_of_sound.setValue(c.get("speed_of_sound", 343.0))
         self.cluster_eps.setValue(c.get("cluster_eps", 1.0))

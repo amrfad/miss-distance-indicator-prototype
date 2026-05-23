@@ -41,7 +41,15 @@ class JsonFileStore(ConfigStore):
     """Implementasi ConfigStore menggunakan JSON file di filesystem."""
 
     def __init__(self, path: str = "ground_config_override.json"):
-        self.path = Path(path)
+        import sys, os
+        # Mengubah path penyimpanan agar tetap aman saat dijalankan sebagai EXE PyInstaller
+        if getattr(sys, 'frozen', False):
+            # Jika dicompile jadi EXE, simpan config di sebelah file EXE
+            base_dir = os.path.dirname(sys.executable)
+        else:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            
+        self.path = Path(os.path.join(base_dir, path))
 
     def load(self) -> dict:
         if not self.path.exists():
@@ -150,7 +158,7 @@ _PARAM_SCHEMA = [
         "label": "Raspberry Pi IP",
         "description": "IP Address Drone",
         "type": "string",
-        "default": "192.168.1.100",
+        "default": "10.99.99.2",
         "requires_restart": False,
         "unit": None,
     },
@@ -502,9 +510,14 @@ def get_global_config_manager() -> GroundConfigManager:
     global _GLOBAL_MANAGER
     with _GLOBAL_LOCK:
         if _GLOBAL_MANAGER is None:
-            # Setup default path di darat/config/ground_config_override.json
-            import os
-            base_dir = os.path.dirname(os.path.abspath(__file__))
+            import sys, os
+            # Saat dijalankan sebagai EXE PyInstaller, __file__ menunjuk ke
+            # folder temp _MEIxxxxx yang dihapus saat EXE keluar.
+            # Gunakan sys.executable agar config tersimpan permanen di sebelah EXE.
+            if getattr(sys, 'frozen', False):
+                base_dir = os.path.dirname(sys.executable)
+            else:
+                base_dir = os.path.dirname(os.path.abspath(__file__))
             config_dir = os.path.join(base_dir, "config")
             os.makedirs(config_dir, exist_ok=True)
             store = JsonFileStore(os.path.join(config_dir, "ground_config_override.json"))

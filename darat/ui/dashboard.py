@@ -46,7 +46,7 @@ class MainDashboard(QMainWindow):
 
         self._serial_bridge = SerialBridge(self)
         self._rest_client = RestClient(
-            drone_ip=cfg.get("raspi_ip", "192.168.1.100"),
+            drone_ip=cfg.get("raspi_ip", "10.99.99.2"),
             parent=self
         )
         self._ft_log_msgs: list[str] = []
