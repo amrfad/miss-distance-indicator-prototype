@@ -73,12 +73,10 @@ class LogPanel(QWidget):
         hh.addStretch()
 
         self._clear_btn = QPushButton("CLEAR")
-        self._clear_btn.setFixedSize(52, 22)
         self._clear_btn.clicked.connect(self.clear)
         hh.addWidget(self._clear_btn)
 
-        self._toggle_btn = QPushButton("▲  HIDE")
-        self._toggle_btn.setFixedSize(68, 22)
+        self._toggle_btn = QPushButton("HIDE")
         self._toggle_btn.clicked.connect(self._toggle_collapse)
         hh.addWidget(self._toggle_btn)
 
@@ -118,11 +116,11 @@ class LogPanel(QWidget):
         self._collapsed = collapsed
         self._console.setVisible(not collapsed)
         if collapsed:
-            self._toggle_btn.setText("▼  SHOW")
+            self._toggle_btn.setText("SHOW")
             self._pending_count = 0
             self._pending_lbl.setText("")
         else:
-            self._toggle_btn.setText("▲  HIDE")
+            self._toggle_btn.setText("HIDE")
             self._pending_count = 0
             self._pending_lbl.setText("")
 

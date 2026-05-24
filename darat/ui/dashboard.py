@@ -108,7 +108,6 @@ class MainDashboard(QMainWindow):
 
         self._menu_btn = QPushButton("☰")
         self._menu_btn.setObjectName("menuBtn")
-        self._menu_btn.setFixedSize(32, 32)
         self._menu_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._menu_btn.setCheckable(True)
         self._menu_btn.setChecked(True)

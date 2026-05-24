@@ -35,6 +35,7 @@ def main():
     if os.path.exists(qss_path):
         with open(qss_path, "r", encoding="utf-8") as f:
             app.setStyleSheet(f.read())
+            
 
     # Default font
     font = QFont("Inter")

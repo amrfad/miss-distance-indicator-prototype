@@ -163,7 +163,6 @@ class ProcessPage(QWidget):
         header_row.addWidget(log_title)
         header_row.addStretch()
         clr_btn = QPushButton("CLEAR")
-        clr_btn.setFixedSize(56, 24)
         clr_btn.clicked.connect(self._clear_log)
         header_row.addWidget(clr_btn)
         rl.addLayout(header_row)
