@@ -38,18 +38,26 @@ def print_header():
         print("\nWaiting for commands from ground station...")
         print("Commands: START_REC | STOP_REC | STATUS")
     else:
-        print("\nOFFLINE MODE - Keyboard Control")
-        print("Commands:")
-        print("  s - Start Recording")
-        print("  p - Stop Recording and Process")
-        print("  t - Get Status")
-        print("  i - System Info")
-        print("  q - Quit")
+        if sys.stdin.isatty():
+            print("\nOFFLINE MODE - Keyboard Control")
+            print("Commands:")
+            print("  s - Start Recording")
+            print("  p - Stop Recording and Process")
+            print("  t - Get Status")
+            print("  i - System Info")
+            print("  q - Quit")
+        else:
+            print("\nOFFLINE MODE - Headless (Running as service)")
     print("Press Ctrl+C to exit\n")
 
 
 def get_keyboard_command():
     """Baca command dari keyboard untuk OFFLINE mode"""
+    import time
+    if not sys.stdin.isatty():
+        time.sleep(1.0)
+        return None
+        
     try:
         cmd = input("\nEnter command (s/p/t/i/q): ").strip().lower()
         command_map = {
@@ -234,7 +242,7 @@ def run_online_mode(audio_system, config_manager=None):
     baud_rate = cfg.get("baud_rate", 230400)
     timeout = cfg.get("serial_timeout", 5)
 
-    serial_handler = SerialHandler(port=serial_port, baud_rate=baud_rate, timeout=timeout)
+    serial_handler = SerialHandler(port=serial_port, baudrate=baud_rate, timeout=timeout)
     
     # Connect to serial
     if not serial_handler.connect():
