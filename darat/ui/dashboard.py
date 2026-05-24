@@ -250,9 +250,9 @@ class MainDashboard(QMainWindow):
         layout.addWidget(self._status)
 
         # Content splitter (page stack + log panel)
-        content_splitter = QSplitter(Qt.Orientation.Vertical)
-        content_splitter.setHandleWidth(4)
-        content_splitter.setChildrenCollapsible(False)
+        self._content_splitter = QSplitter(Qt.Orientation.Vertical)
+        self._content_splitter.setHandleWidth(4)
+        self._content_splitter.setChildrenCollapsible(True)
 
         # Page stack
         self._stack = QStackedWidget()
@@ -281,14 +281,16 @@ class MainDashboard(QMainWindow):
         self._stack.addWidget(self._page_command)
         self._stack.addWidget(self._page_process)
         self._stack.addWidget(self._page_visualize)
-        content_splitter.addWidget(self._stack)
+        self._content_splitter.addWidget(self._stack)
 
         # Log panel
         self._log = LogPanel()
-        content_splitter.addWidget(self._log)
-        content_splitter.setSizes([600, 200])
+        self._content_splitter.addWidget(self._log)
+        self._content_splitter.setSizes([600, 200])
+        # Simpan ukuran expanded log untuk restore saat un-minimize
+        self._log_expanded_size = 200
 
-        layout.addWidget(content_splitter, stretch=1)
+        layout.addWidget(self._content_splitter, stretch=1)
 
         # Wire page signals
         for page in (self._page_config, self._page_command,
@@ -353,6 +355,25 @@ class MainDashboard(QMainWindow):
         btn = self._nav_group.button(page_idx)
         if btn:
             btn.setChecked(True)
+
+        # Auto-collapse log saat tab Visualize, expand kembali di tab lain
+        if hasattr(self, '_log') and hasattr(self, '_content_splitter'):
+            if page_idx == self._PAGE_VISUALIZE:
+                # Simpan ukuran saat ini sebelum collapse
+                sizes = self._content_splitter.sizes()
+                if len(sizes) >= 2 and sizes[1] > 40:
+                    self._log_expanded_size = sizes[1]
+                self._log.set_collapsed(True)
+                # Collapse splitter: beri log hanya 32px (tinggi header)
+                total = self._content_splitter.height()
+                self._content_splitter.setSizes([total - 32, 32])
+            else:
+                # Restore log ke ukuran sebelumnya jika sedang collapsed
+                if self._log.is_collapsed():
+                    self._log.set_collapsed(False)
+                    total = self._content_splitter.height()
+                    log_h = max(self._log_expanded_size, 150)
+                    self._content_splitter.setSizes([total - log_h, log_h])
 
     @Slot()
     def _do_connect(self):

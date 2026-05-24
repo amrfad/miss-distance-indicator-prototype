@@ -468,3 +468,15 @@ QSplitter::handle:horizontal {
 QSplitter::handle:vertical {
     height: 2px;
 }
+
+/* ─────────────────────────────────────────────────────────────
+   RADAR & TACTICAL 3D CANVAS
+───────────────────────────────────────────────────────────── */
+
+QWidget#radarCanvas,
+QWidget#tactical3DCanvas,
+QWidget#tactical3DWidget {
+    background-color: #060d06;
+    border: 1px solid #1a4a1a;
+    border-radius: 8px;
+}
