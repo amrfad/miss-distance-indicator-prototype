@@ -9,7 +9,7 @@
 ───────────────────────────────────────────────────────────── */
 
 * {
-    font-family: "IBM Plex Sans";
+    font-family: "Inter", "Segoe UI", "Roboto", sans-serif;
     font-size: 12px;
     color: #172033;
     background-color: transparent;
@@ -50,7 +50,7 @@ QLabel#statusValue {
     color: #2563eb;
     font-size: 14px;
     font-weight: 600;
-    font-family: "IBM Plex Mono";
+    font-family: "Inter", "Segoe UI", "Roboto", sans-serif;
 }
 
 QLabel#statusOk {
@@ -87,7 +87,7 @@ QLabel#sidebarTitle {
 QLabel#sidebarSubtitle {
     color: #64748b;
     font-size: 10px;
-    font-family: "IBM Plex Mono";
+    font-family: "Inter", "Segoe UI", "Roboto", sans-serif;
     letter-spacing: 1px;
 }
 
@@ -122,7 +122,7 @@ QPushButton#navBtn:pressed {
 QLabel#sidebarConnLabel {
     color: #64748b;
     font-size: 10px;
-    font-family: "IBM Plex Mono";
+    font-family: "Inter", "Segoe UI", "Roboto", sans-serif;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -247,7 +247,7 @@ QLineEdit[readOnly="true"],
 QTextEdit[readOnly="true"] {
     background-color: #f8fafc;
     color: #0f766e;
-    font-family: "IBM Plex Mono";
+    font-family: "Inter", "Segoe UI", "Roboto", sans-serif;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -425,7 +425,7 @@ QTextEdit#logConsole {
     border-radius: 8px;
     padding: 8px;
     color: #172033;
-    font-family: "IBM Plex Mono";
+    font-family: "Inter", "Segoe UI", "Roboto", sans-serif;
     font-size: 11px;
 }
 

@@ -1,5 +1,5 @@
-from .status_panel import StatusPanel
-from .log_panel import LogPanel
-from .control_buttons import ControlButtons
+# darat/ui/widgets/__init__.py
 
-__all__ = ["StatusPanel", "LogPanel", "ControlButtons"]
+from .log_panel import LogPanel
+
+__all__ = ["LogPanel"]

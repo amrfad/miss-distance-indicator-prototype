@@ -1,153 +1,255 @@
 # darat/ui/pages/command_page.py
-"""Command Page — serial command control (port of darat/screens/command_screen.py)."""
+"""Command Page — Serial command control with status response panel."""
 
 import os
 import threading
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QFrame, QPushButton, QLabel, QFileDialog,
+    QFrame, QPushButton, QLabel, QTextEdit,
 )
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Signal, Qt, QTimer
 
-from ...config import (
-    CMD_STANDBY, CMD_START_RECORD, CMD_STOP_RECORD,
-    CMD_STATUS, CMD_INFO, CMD_PROCESS, CMD_TRANSMIT,
-)
+from ...config import CMD_START_RECORD, CMD_STOP_RECORD, CMD_STATUS
 
 
 class CommandPage(QWidget):
-    """Command tab: 7 action buttons + current-status display.
+    """Command tab: Connect, Disconnect, Start/Stop Rec, Status, Process Data."""
 
-    All button actions route through serial_bridge. JSON reception
-    spawns a daemon thread (using existing JsonReceiver logic).
+    log_message = Signal(str, str)  # (message, level)
 
-    Signals
-    -------
-    log_message(str, str)    — (message, level) → shared log panel
-    recording_started()      — notify toolbar to update button state
-    recording_stopped()      — notify toolbar to update button state
-    json_received(str)       — filename of saved JSON
-    """
-
-    log_message       = Signal(str, str)
-    recording_started = Signal()
-    recording_stopped = Signal()
-    json_received     = Signal(str)
-
-    def __init__(self, serial_bridge, file_transfer, json_receiver, parent=None):
+    def __init__(self, serial_bridge, file_transfer, json_receiver,
+                 log_callback=None, navigate_callback=None, parent=None):
         super().__init__(parent)
-        self._serial  = serial_bridge
-        self._ft      = file_transfer
-        self._jr      = json_receiver
-        self._rx_thread: threading.Thread | None = None  # Thread penerimaan JSON continuous
+        self._serial = serial_bridge
+        self._ft = file_transfer
+        self._jr = json_receiver
+        self._log_callback = log_callback
+        self._navigate = navigate_callback
+        self._rx_thread: threading.Thread | None = None
+        self._is_recording = False
+        self._last_json_file = None
+
         self._build_ui()
+        self._update_ui_state()
+
+        # Timer untuk polling status koneksi & UI
+        self._poll_timer = QTimer(self)
+        self._poll_timer.timeout.connect(self._poll)
+        self._poll_timer.start(1000)
+
+        # Hubungkan sinyal dari serial_bridge untuk menangkap balasan STATUS
+        self._serial.message_received.connect(self._on_serial_message)
+
+    def _log(self, msg, level="INFO"):
+        if self._log_callback:
+            self._log_callback(msg, level)
+        self.log_message.emit(msg, level)
 
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(12, 12, 12, 12)
-        root.setSpacing(12)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(16)
 
-        # Page title
-        title = QLabel("SERIAL COMMAND CONTROL")
-        title.setObjectName("sectionTitle")
-        root.addWidget(title)
+        # ── 1. Status bar (koneksi + recording) ──
+        status_bar = QFrame()
+        status_bar.setObjectName("card")
+        status_layout = QHBoxLayout(status_bar)
+        status_layout.setContentsMargins(16, 10, 16, 10)
+        status_layout.setSpacing(16)
 
-        # Status bar
-        self._status_frame = QFrame()
-        self._status_frame.setObjectName("card")
-        sl = QHBoxLayout(self._status_frame)
-        sl.setContentsMargins(12, 8, 12, 8)
-        self._status_label = QLabel("Status: Ready")
-        self._status_label.setObjectName("statusValue")
-        sl.addWidget(self._status_label)
-        sl.addStretch()
-        self._port_label = QLabel("Serial: Disconnected")
-        self._port_label.setObjectName("statusHeading")
-        sl.addWidget(self._port_label)
-        root.addWidget(self._status_frame)
+        self.conn_indicator = QLabel("● DISCONNECTED")
+        self.conn_indicator.setObjectName("statusError")
+        status_layout.addWidget(self.conn_indicator)
 
-        # Button grid
-        btn_frame = QFrame()
-        btn_frame.setObjectName("card")
-        grid = QGridLayout(btn_frame)
-        grid.setSpacing(10)
-        grid.setContentsMargins(16, 16, 16, 16)
+        self.rec_indicator = QLabel("○ IDLE")
+        self.rec_indicator.setObjectName("statusHeading")
+        status_layout.addWidget(self.rec_indicator)
 
-        buttons = [
-            ("CHECK STATUS",   "btnConnect",  self._check_status,  0, 0),
-            ("INFO",           "btnPrimary",  self._info,          0, 1),
-            ("START RECORD",   "btnStart",    self._start_record,  1, 0),
-            ("STOP RECORD",    "btnStop",     self._stop_record,   1, 1),
-            ("PROCESS DATA",   "btnSave",     self._process,       2, 0),
-            ("TRANSMIT FILES", "btnPrimary",  self._transmit,      2, 1),
-            ("SET SAVE DIR",   "",            self._choose_save_dir, 3, 0),
-        ]
+        status_layout.addStretch()
+        root.addWidget(status_bar)
 
-        for text, obj_name, slot, row, col in buttons:
-            btn = QPushButton(text)
-            if obj_name:
-                btn.setObjectName(obj_name)
-            btn.setMinimumHeight(44)
-            btn.clicked.connect(slot)
-            grid.addWidget(btn, row, col)
+        # ── 2. Tombol grid 2x3 ──
+        btn_group = QFrame()
+        btn_group.setObjectName("card")
+        btn_layout = QGridLayout(btn_group)
+        btn_layout.setContentsMargins(16, 16, 16, 16)
+        btn_layout.setSpacing(12)
 
-        root.addWidget(btn_frame)
+        self.connect_btn = QPushButton("🔌 CONNECT")
+        self.connect_btn.setObjectName("btnConnect")
+        self.connect_btn.setMinimumHeight(44)
+        self.connect_btn.clicked.connect(self._on_connect)
+
+        self.disconnect_btn = QPushButton("⛌ DISCONNECT")
+        self.disconnect_btn.setObjectName("btnStop")
+        self.disconnect_btn.setMinimumHeight(44)
+        self.disconnect_btn.setEnabled(False)
+        self.disconnect_btn.clicked.connect(self._on_disconnect)
+
+        self.start_rec_btn = QPushButton("● START REC")
+        self.start_rec_btn.setObjectName("btnStart")
+        self.start_rec_btn.setMinimumHeight(44)
+        self.start_rec_btn.setEnabled(False)
+        self.start_rec_btn.clicked.connect(self._on_start_record)
+
+        self.stop_rec_btn = QPushButton("■ STOP REC")
+        self.stop_rec_btn.setObjectName("btnStop")
+        self.stop_rec_btn.setMinimumHeight(44)
+        self.stop_rec_btn.setEnabled(False)
+        self.stop_rec_btn.clicked.connect(self._on_stop_record)
+
+        self.status_btn = QPushButton("🔍 STATUS")
+        self.status_btn.setObjectName("btnPrimary")
+        self.status_btn.setMinimumHeight(44)
+        self.status_btn.setEnabled(False)
+        self.status_btn.clicked.connect(self._on_check_status)
+
+        self.process_btn = QPushButton("⚙ PROCESS DATA")
+        self.process_btn.setObjectName("btnSave")
+        self.process_btn.setMinimumHeight(44)
+        self.process_btn.setEnabled(False)
+        self.process_btn.clicked.connect(self._on_process_data)
+
+        # Susun di grid 2x3
+        btn_layout.addWidget(self.connect_btn, 0, 0)
+        btn_layout.addWidget(self.disconnect_btn, 0, 1)
+        btn_layout.addWidget(self.start_rec_btn, 1, 0)
+        btn_layout.addWidget(self.stop_rec_btn, 1, 1)
+        btn_layout.addWidget(self.status_btn, 2, 0)
+        btn_layout.addWidget(self.process_btn, 2, 1)
+
+        root.addWidget(btn_group)
+
+        # ── 3. Panel STATUS RESPONSE ──
+        resp_group = QFrame()
+        resp_group.setObjectName("card")
+        resp_layout = QVBoxLayout(resp_group)
+        resp_layout.setContentsMargins(16, 12, 16, 12)
+        resp_layout.setSpacing(8)
+
+        resp_title = QLabel("📡 STATUS RESPONSE")
+        resp_title.setObjectName("statusHeading")
+        resp_layout.addWidget(resp_title)
+
+        self.status_response_text = QTextEdit()
+        self.status_response_text.setObjectName("logConsole")
+        self.status_response_text.setReadOnly(True)
+        self.status_response_text.setMaximumHeight(100)
+        self.status_response_text.setPlaceholderText("Press 'STATUS' to get system health report...")
+        resp_layout.addWidget(self.status_response_text)
+
+        root.addWidget(resp_group)
+
+        # ── 4. LAST JSON RECEIVED ──
+        last_group = QFrame()
+        last_group.setObjectName("card")
+        last_layout = QHBoxLayout(last_group)
+        last_layout.setContentsMargins(16, 12, 16, 12)
+        last_layout.addWidget(QLabel("📄 LAST JSON RECEIVED:"))
+        self.last_json_label = QLabel("—")
+        self.last_json_label.setObjectName("statusValue")
+        last_layout.addWidget(self.last_json_label, stretch=1)
+        root.addWidget(last_group)
+
         root.addStretch()
 
-        # Save dir info
-        dir_frame = QFrame()
-        dir_frame.setObjectName("card")
-        dl = QHBoxLayout(dir_frame)
-        dl.setContentsMargins(12, 6, 12, 6)
-        dl.addWidget(QLabel("Save directory:"))
-        self._dir_label = QLabel("—")
-        self._dir_label.setObjectName("statusValue")
-        dl.addWidget(self._dir_label, stretch=1)
-        root.addWidget(dir_frame)
+    def _update_ui_state(self):
+        raw = self._serial.is_connected()
+        connected = bool(raw) if raw is not None else False
 
-        self._refresh_status()
+        self.connect_btn.setEnabled(not connected)
+        self.disconnect_btn.setEnabled(connected)
+        self.status_btn.setEnabled(connected)
+        self.start_rec_btn.setEnabled(connected and not self._is_recording)
+        self.stop_rec_btn.setEnabled(connected and self._is_recording)
 
-    # ── Helpers ──────────────────────────────────────────────────────────
+        has_json = self._last_json_file is not None and os.path.exists(self._last_json_file)
+        self.process_btn.setEnabled(connected and has_json)
 
-    def _refresh_status(self):
-        connected = self._serial.is_connected()
-        info = self._serial.get_port_info()
-        port = info["port"] if info else "—"
-        self._port_label.setText(
-            f"Serial: {'Connected (' + port + ')' if connected else 'Disconnected'}"
-        )
-        save_dir = getattr(self._ft, "save_directory", "")
-        self._dir_label.setText(os.path.basename(save_dir) or save_dir or "—")
+        # Update status bar
+        if connected:
+            info = self._serial.get_port_info()
+            port = info.get("port", "—") if info else "—"
+            self.conn_indicator.setText(f"● CONNECTED ({port})")
+            self.conn_indicator.setObjectName("statusOk")
+        else:
+            self.conn_indicator.setText("● DISCONNECTED")
+            self.conn_indicator.setObjectName("statusError")
 
-    def _set_status(self, text: str):
-        self._status_label.setText(text)
+        if self._is_recording:
+            self.rec_indicator.setText("● RECORDING")
+            self.rec_indicator.setObjectName("statusOk")
+        else:
+            self.rec_indicator.setText("○ IDLE")
+            self.rec_indicator.setObjectName("statusHeading")
 
-    # ── Command handlers ─────────────────────────────────────────────────
+        # Refresh style
+        for w in (self.conn_indicator, self.rec_indicator):
+            w.style().unpolish(w)
+            w.style().polish(w)
 
-    def _check_status(self):
+    def _poll(self):
+        self._update_ui_state()
+
+    def _on_serial_message(self, msg: str):
+        """Tangkap balasan dari drone, khusus untuk STATUS."""
+        # Asumsikan drone membalas dengan teks seperti "MIC=OK, SDR=OK, ..."
+        # atau bisa juga "STATUS: ..."
+        if msg and ("MIC" in msg.upper() or "SDR" in msg.upper() or "ZOOM" in msg.upper()):
+            # Tampilkan di panel status response
+            self.status_response_text.append(f"> {msg.strip()}")
+            self.status_response_text.ensureCursorVisible()
+        # Selain itu, biarkan log panel menangani (sudah tersambung)
+
+    def _on_connect(self):
+        self._log("Connecting to serial port...", "INFO")
+        parent = self.window()
+        if hasattr(parent, '_do_connect_command'):
+            ok = parent._do_connect_command()
+            self._log("Connected" if ok else "Connection failed", "INFO" if ok else "ERROR")
+        else:
+            self._log("Cannot connect: parent dashboard missing", "ERROR")
+        self._update_ui_state()
+
+    def _on_disconnect(self):
+        parent = self.window()
+        if hasattr(parent, '_do_disconnect_command'):
+            parent._do_disconnect_command()
+        # Hentikan thread JSON jika berjalan
+        if self._rx_thread and self._rx_thread.is_alive():
+            self._jr.stop_continuous()
+            self._rx_thread.join(timeout=0.5)
+        self._is_recording = False
+        self._update_ui_state()
+
+    def _on_check_status(self):
+        self._log("Sending STATUS command to drone...", "INFO")
+        self.status_response_text.clear()
+        self.status_response_text.append("Requesting system status...")
         self._serial.send_command(CMD_STATUS)
-        self._set_status(f"Checking status… ({CMD_STATUS} sent)")
-        self.log_message.emit("Sent STATUS command", "INFO")
 
-    def _info(self):
-        self._serial.send_command(CMD_INFO)
-        self._set_status(f"Retrieving info… ({CMD_INFO} sent)")
-        self.log_message.emit("Sent INFO command", "INFO")
+    def _on_start_record(self):
+        if self._is_recording:
+            self._log("Already recording", "WARNING")
+            return
 
-    def _start_record(self):
-        self._serial.send_command(CMD_START_RECORD)
-        self._set_status(f"Recording\u2026 ({CMD_START_RECORD} sent)")
-        self.log_message.emit("Recording started", "INFO")
-        self.recording_started.emit()
+        parent = self.window()
+        if hasattr(parent, '_do_start_record_command'):
+            parent._do_start_record_command()
 
-        # Reset state deduplikasi dan mulai listener JSON continuous
+        self._is_recording = True
         self._jr.reset()
+        self._last_json_file = None
+        self.last_json_label.setText("—")
 
         def _on_json_saved(filename: str):
-            self._set_status(f"JSON diterima: {filename}")
-            self.log_message.emit(f"JSON file received: {filename}", "INFO")
-            self.json_received.emit(filename)
+            self._last_json_file = filename
+            self.last_json_label.setText(os.path.basename(filename))
+            self._log(f"JSON received: {filename}", "INFO")
+            self._update_ui_state()
+            if hasattr(parent, '_on_json_received'):
+                parent._on_json_received(filename)
 
         self._rx_thread = threading.Thread(
             target=self._jr.receive_json,
@@ -156,35 +258,39 @@ class CommandPage(QWidget):
             name="JsonReceiver-Continuous",
         )
         self._rx_thread.start()
-        self.log_message.emit("Continuous JSON receiver thread started", "DEBUG")
+        self._log("Continuous JSON receiver started", "DEBUG")
+        self._update_ui_state()
 
-    def _stop_record(self):
-        # Hentikan loop continuous receiver (berhenti setelah paket saat ini selesai)
+    def _on_stop_record(self):
+        if not self._is_recording:
+            self._log("Not recording", "WARNING")
+            return
+
         self._jr.stop_continuous()
+        parent = self.window()
+        if hasattr(parent, '_do_stop_record_command'):
+            parent._do_stop_record_command()
+        self._is_recording = False
+        self._log("Recording stopped", "INFO")
+        self._update_ui_state()
 
-        self._serial.send_command(CMD_STOP_RECORD)
-        self._set_status(f"Recording stopped — menunggu data terakhir… ({CMD_STOP_RECORD} sent)")
-        self.log_message.emit("Recording stopped — menunggu JSON file terakhir", "WARNING")
-        self.recording_stopped.emit()
-        self.log_message.emit("JSON receiver akan berhenti setelah data terakhir diterima", "DEBUG")
+    def _on_process_data(self):
+        if not self._last_json_file or not os.path.exists(self._last_json_file):
+            self._log("No valid JSON file to process", "WARNING")
+            return
 
-    def _process(self):
-        self._serial.send_command(CMD_PROCESS)
-        self._set_status(f"Processing… ({CMD_PROCESS} sent)")
-        self.log_message.emit("Sent PROCESS command", "INFO")
+        self._log(f"Processing: {os.path.basename(self._last_json_file)}", "INFO")
+        if self._navigate:
+            self._navigate(2)  # ProcessPage index (harus cocok dengan dashboard)
 
-    def _transmit(self):
-        self._serial.send_command(CMD_TRANSMIT)
-        self._set_status(f"Transmitting… ({CMD_TRANSMIT} sent)")
-        self.log_message.emit("Sent TRANSMIT command", "INFO")
-
-    def _choose_save_dir(self):
-        current = getattr(self._ft, "save_directory", "")
-        directory = QFileDialog.getExistingDirectory(
-            self, "Choose directory to save received files", current
-        )
-        if directory:
-            self._ft.save_directory  = directory
-            self._jr.save_directory  = directory
-            self._dir_label.setText(os.path.basename(directory))
-            self.log_message.emit(f"Save directory changed to: {directory}", "INFO")
+        parent = self.window()
+        if hasattr(parent, '_page_process'):
+            process_page = parent._page_process
+            process_page.set_working_dir(os.path.dirname(self._last_json_file))
+            # Panggil method untuk memproses file yang dipilih
+            if hasattr(process_page, 'process_file'):
+                process_page.process_file(self._last_json_file)
+            else:
+                self._log("ProcessPage has no 'process_file' method", "ERROR")
+        else:
+            self._log("Process page not found", "ERROR")

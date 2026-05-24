@@ -5,6 +5,7 @@ Entry point: python -m darat.main  (or  python darat/main.py)
 
 import sys
 import os
+from tkinter import font
 
 # Ensure project root is on path when run as script
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -36,8 +37,9 @@ def main():
             app.setStyleSheet(f.read())
 
     # Default font
-    font = QFont("JetBrains Mono", 10)
-    font.setStyleHint(QFont.StyleHint.Monospace)
+    font = QFont("Inter")
+    font.setStyleHint(QFont.StyleHint.SansSerif)
+    font.setPointSize(10)
     app.setFont(font)
 
     window = MainDashboard()
