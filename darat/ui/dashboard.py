@@ -198,9 +198,37 @@ class MainDashboard(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
+<<<<<<< HEAD
         content_splitter = QSplitter(Qt.Orientation.Vertical)
         content_splitter.setHandleWidth(4)
         content_splitter.setChildrenCollapsible(False)
+=======
+        # Toolbar
+        self._toolbar = ControlButtons()
+        self._toolbar.setFixedHeight(48)
+        self._toolbar.connect_clicked.connect(self._do_connect)
+        self._toolbar.disconnect_clicked.connect(self._do_disconnect)
+        self._toolbar.start_clicked.connect(self._do_start_record)
+        self._toolbar.stop_clicked.connect(self._do_stop_record)
+        self._toolbar.apply_serial_clicked.connect(self._do_apply_serial)
+        layout.addWidget(self._toolbar)
+
+        # Thin divider
+        hdiv = QFrame()
+        hdiv.setFrameShape(QFrame.Shape.HLine)
+        hdiv.setFrameShadow(QFrame.Shadow.Sunken)
+        layout.addWidget(hdiv)
+
+        # Status strip (compact 1 row)
+        self._status = StatusPanel()
+        self._status.setFixedHeight(52)
+        layout.addWidget(self._status)
+
+        # Content splitter (page stack + log panel)
+        self._content_splitter = QSplitter(Qt.Orientation.Vertical)
+        self._content_splitter.setHandleWidth(4)
+        self._content_splitter.setChildrenCollapsible(True)
+>>>>>>> 03f2b47998c435f8965d5107a7dce524c7d7b1b1
 
         self._stack = QStackedWidget()
 
@@ -228,13 +256,20 @@ class MainDashboard(QMainWindow):
         self._stack.addWidget(self._page_command)
         self._stack.addWidget(self._page_process)
         self._stack.addWidget(self._page_visualize)
-        content_splitter.addWidget(self._stack)
+        self._content_splitter.addWidget(self._stack)
 
         self._log = LogPanel()
+<<<<<<< HEAD
         content_splitter.addWidget(self._log)
         content_splitter.setSizes([550, 300])
+=======
+        self._content_splitter.addWidget(self._log)
+        self._content_splitter.setSizes([600, 200])
+        # Simpan ukuran expanded log untuk restore saat un-minimize
+        self._log_expanded_size = 200
+>>>>>>> 03f2b47998c435f8965d5107a7dce524c7d7b1b1
 
-        layout.addWidget(content_splitter, stretch=1)
+        layout.addWidget(self._content_splitter, stretch=1)
 
         # Wire signals
         for page in (self._page_config, self._page_command,
@@ -279,9 +314,34 @@ class MainDashboard(QMainWindow):
         if btn:
             btn.setChecked(True)
 
+<<<<<<< HEAD
     # ========== Serial Actions (called from CommandPage) ==========
     def _do_connect_command(self):
         self._log.log("Connecting to serial port...", "INFO")
+=======
+        # Auto-collapse log saat tab Visualize, expand kembali di tab lain
+        if hasattr(self, '_log') and hasattr(self, '_content_splitter'):
+            if page_idx == self._PAGE_VISUALIZE:
+                # Simpan ukuran saat ini sebelum collapse
+                sizes = self._content_splitter.sizes()
+                if len(sizes) >= 2 and sizes[1] > 40:
+                    self._log_expanded_size = sizes[1]
+                self._log.set_collapsed(True)
+                # Collapse splitter: beri log hanya 32px (tinggi header)
+                total = self._content_splitter.height()
+                self._content_splitter.setSizes([total - 32, 32])
+            else:
+                # Restore log ke ukuran sebelumnya jika sedang collapsed
+                if self._log.is_collapsed():
+                    self._log.set_collapsed(False)
+                    total = self._content_splitter.height()
+                    log_h = max(self._log_expanded_size, 150)
+                    self._content_splitter.setSizes([total - log_h, log_h])
+
+    @Slot()
+    def _do_connect(self):
+        self._log.log("Connecting to serial port…", "INFO")
+>>>>>>> 03f2b47998c435f8965d5107a7dce524c7d7b1b1
         ok = self._serial_bridge.connect_auto()
         if not ok:
             self._log.log("Auto-connect failed.", "ERROR")

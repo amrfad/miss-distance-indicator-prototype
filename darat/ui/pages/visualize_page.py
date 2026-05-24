@@ -1,5 +1,9 @@
 # darat/ui/pages/visualize_page.py
-"""Visualize Page — 3D/2D matplotlib plots (port of darat/screens/visualize_screen.py)."""
+"""Visualize Page — Native PySide6 radar (2D) + tactical isometric (3D) display.
+
+Menggantikan implementasi berbasis Matplotlib dengan widget QPainter native.
+Parser data tetap menggunakan parse_results_file() dari visualize_results.py.
+"""
 
 import glob
 import os
@@ -11,54 +15,13 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Signal, Qt
 
-import matplotlib
-matplotlib.use("QtAgg")  # Qt6-compatible Agg backend
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavToolbar
-
-from ...visualize_results import parse_results_file, visualize_3d, visualize_2d_projections
-
-
-class _MatplotlibCanvas(QWidget):
-    """Simple wrapper that embeds a matplotlib Figure with navigation toolbar."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._layout = QVBoxLayout(self)
-        self._layout.setContentsMargins(0, 0, 0, 0)
-        self._canvas = None
-        self._toolbar = None
-        self._placeholder = QLabel(
-            "Select a results file and click  '▶ VISUALIZE'  to view plot.",
-            alignment=Qt.AlignmentFlag.AlignCenter,
-        )
-        self._placeholder.setStyleSheet("color:#94a3b8; font-size:12px;")
-        self._layout.addWidget(self._placeholder)
-
-    def set_figure(self, fig):
-        """Replace current figure with a new matplotlib Figure."""
-        for i in reversed(range(self._layout.count())):
-            widget = self._layout.itemAt(i).widget()
-            if widget:
-                widget.setParent(None)
-
-        self._canvas  = FigureCanvas(fig)
-        self._toolbar = NavToolbar(self._canvas, self)
-        self._layout.addWidget(self._toolbar)
-        self._layout.addWidget(self._canvas)
-        self._canvas.draw()
-
-    def clear(self):
-        for i in reversed(range(self._layout.count())):
-            w = self._layout.itemAt(i).widget()
-            if w:
-                w.setParent(None)
-        self._layout.addWidget(self._placeholder)
-        self._placeholder.setVisible(True)
+from ..widgets.radar_widget import RadarWidget
+from ..widgets.tactical_3d_widget import Tactical3DWidget
+from ...visualize_results import parse_results_file
 
 
 class VisualizePage(QWidget):
-    """Visualize tab: 3D + 2D matplotlib projections of TDOA results.
+    """Visualize tab: tampilan radar polar 2D dan spike-map isometrik 3D.
 
     Signals
     -------
@@ -144,10 +107,13 @@ class VisualizePage(QWidget):
         rl.setSpacing(4)
 
         self._plot_tabs = QTabWidget()
-        self._canvas_3d = _MatplotlibCanvas()
-        self._canvas_2d = _MatplotlibCanvas()
-        self._plot_tabs.addTab(self._canvas_3d, "  📦 3D VIEW  ")
-        self._plot_tabs.addTab(self._canvas_2d, "  📐 2D PROJECTIONS  ")
+
+        # Widget visualisasi native
+        self._canvas_3d = Tactical3DWidget()
+        self._canvas_2d = RadarWidget()
+
+        self._plot_tabs.addTab(self._canvas_3d, "  ◈ 3D TACTICAL  ")
+        self._plot_tabs.addTab(self._canvas_2d, "  ◉ 2D RADAR  ")
         rl.addWidget(self._plot_tabs)
 
         self._info_label = QLabel("")
@@ -209,25 +175,15 @@ class VisualizePage(QWidget):
 
         name = os.path.basename(path)
 
-        # 3D
-        fig_3d = visualize_3d(events, name, mic_positions)
-        if fig_3d:
-            self._canvas_3d.set_figure(fig_3d)
-            self.log_message.emit(f"3D plot generated: {name}", "INFO")
-        else:
-            self._canvas_3d.clear()
-            self.log_message.emit("3D plot generation failed", "ERROR")
-
-        # 2D projections
-        fig_2d = visualize_2d_projections(events, name, mic_positions)
-        if fig_2d:
-            self._canvas_2d.set_figure(fig_2d)
-            self.log_message.emit(f"2D projections generated: {name}", "INFO")
-        else:
-            self._canvas_2d.clear()
+        # Kirim data ke kedua widget native
+        self._canvas_3d.set_data(events)
+        self._canvas_2d.set_data(events)
 
         self._info_label.setText(
             f"Total: {len(events)}  |  Valid: {len(valid)}  |  Failed: {len(events) - len(valid)}"
+        )
+        self.log_message.emit(
+            f"Visualization updated: {name}  ({len(valid)} valid events)", "INFO"
         )
 
     def _change_directory(self):
