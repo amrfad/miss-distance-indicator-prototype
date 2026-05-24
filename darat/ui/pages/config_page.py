@@ -76,8 +76,8 @@ class ConfigPage(QWidget):
 
         layout.addStretch()
 
-        # Restart drone button (pindah ke sini biar lebih rapi)
-        self._restart_drone_btn = QPushButton("⚠ RESTART DRONE")
+        # Restart button (pindah ke sini biar lebih rapi)
+        self._restart_drone_btn = QPushButton("RESTART")
         self._restart_drone_btn.setObjectName("btnReset")
         self._restart_drone_btn.setFixedHeight(32)
         self._restart_drone_btn.clicked.connect(self.restart_requested.emit)

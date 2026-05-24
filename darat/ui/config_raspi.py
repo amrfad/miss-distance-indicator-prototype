@@ -155,7 +155,7 @@ class RaspiConfigPanel(QWidget):
         self._restart_msg.setWordWrap(True)
         layout.addWidget(self._restart_msg, stretch=1)
 
-        self._restart_btn = QPushButton("RESTART DRONE")
+        self._restart_btn = QPushButton("RESTART")
         self._restart_btn.setObjectName("btnReset")
         self._restart_btn.setFixedWidth(140)
         self._restart_btn.clicked.connect(self._request_restart)
@@ -551,8 +551,8 @@ class RaspiConfigPanel(QWidget):
 
     def _request_restart(self):
         reply = QMessageBox.question(
-            self, "Restart Drone",
-            "Send restart command to drone?\n\nThis will restart the Python process on the drone.",
+            self, "Restart",
+            "Send restart command ?\n\nThis will restart the Python process.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
