@@ -29,6 +29,19 @@ Write-Host "Sedang mengemas MDI_Ground..." -ForegroundColor Yellow
 # --uac-admin : Auto "Run As Administrator" (Wajib untuk PowerShell Static IP adapter)
 # --add-data : Masukkan asset file statis (.qss UI Themes)
 
+# Workaround untuk error _ctypes pada environment Conda (mencari ffi dll)
+$PythonPrefix = python -c "import sys; print(sys.base_prefix)"
+$FfiDllPath1 = Join-Path $PythonPrefix "Library\bin\libffi*.dll"
+$FfiDllPath2 = Join-Path $PythonPrefix "Library\bin\ffi*.dll"
+
+$AddBinaryArgs = @()
+if (Test-Path $FfiDllPath1) {
+    $AddBinaryArgs += "--add-binary", "$FfiDllPath1;."
+}
+if (Test-Path $FfiDllPath2) {
+    $AddBinaryArgs += "--add-binary", "$FfiDllPath2;."
+}
+
 pyinstaller --noconfirm `
     --onefile `
     --name "MDI_Ground" `
@@ -49,11 +62,30 @@ pyinstaller --noconfirm `
     --hidden-import="starlette" `
     --hidden-import="anyio" `
     --hidden-import="h11" `
+    --hidden-import="darat.builtin_ssl.bucher_misra" `
+    --hidden-import="darat.builtin_ssl.chan_ho" `
+    --hidden-import="darat.builtin_ssl.pivot" `
+    --hidden-import="darat.builtin_ssl.consensus" `
     --add-data "darat/ui/styles/mdi_theme.qss;darat/ui/styles" `
+    @AddBinaryArgs `
     darat/main.py
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Build Berhasil! Aplikasi MDI_Ground.exe dapat ditemukan di folder 'dist'." -ForegroundColor Green
+
+    # Buat folder untuk custom SSL methods di sebelah executable
+    $CustomFolder = ".\dist\custom_ssl_methods"
+    if (-not (Test-Path $CustomFolder)) {
+        New-Item -ItemType Directory -Path $CustomFolder | Out-Null
+        Write-Host "Folder custom SSL methods dibuat: $CustomFolder" -ForegroundColor Cyan
+    }
+
+    # Salin template dokumentasi ke folder dist
+    $TemplateSrc = ".\darat\README_CUSTOM_SSL.md"
+    if (Test-Path $TemplateSrc) {
+        Copy-Item $TemplateSrc ".\dist\README_CUSTOM_SSL.md"
+        Write-Host "Dokumentasi custom method disalin ke dist/." -ForegroundColor Cyan
+    }
 } else {
     Write-Host "Build gagal. Periksa log error sebelumnya." -ForegroundColor Red
 }

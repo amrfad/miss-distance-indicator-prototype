@@ -1,34 +1,38 @@
 # darat/ui/pages/process_page.py
-"""Process Page — TDOA JSON processing (port of darat/screens/process_screen.py)."""
+"""Process Page — TDOA JSON processing dengan dukungan multi-metode SSL."""
 
 import glob
 import json
 import os
+import shutil
 import traceback
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
     QFrame, QLabel, QListWidget, QListWidgetItem,
     QPushButton, QTextEdit, QFileDialog, QMessageBox,
+    QComboBox, QGroupBox,
 )
 from PySide6.QtCore import Signal, Qt, QThread, QObject
 from PySide6.QtGui import QColor
 
 from ...process_json_tdoa import process_event_tdoa, save_results_to_file
 from ...config_manager import get_global_config_manager
+from ... import ssl_registry
 
 
 class _ProcessWorker(QObject):
-    """Background worker for TDOA processing (heavy CPU — never block GUI)."""
+    """Background worker untuk TDOA processing — jangan blok GUI."""
 
     finished = Signal(str, list)   # (filename, events_results)
     progress = Signal(str)         # log line
     error    = Signal(str)         # error message
 
-    def __init__(self, filename: str, mic_positions: dict):
+    def __init__(self, filename: str, mic_positions: dict, method_key: str):
         super().__init__()
-        self._filename = filename
+        self._filename    = filename
         self._mic_positions = mic_positions
+        self._method_key  = method_key
 
     def run(self):
         try:
@@ -38,9 +42,13 @@ class _ProcessWorker(QObject):
             self.error.emit(str(exc))
             return
 
-        self.progress.emit(f"Session ID : {data.get('session_id', 'N/A')}")
-        self.progress.emit(f"Timestamp  : {data.get('timestamp', 'N/A')}")
-        self.progress.emit(f"Events     : {data.get('event_count', 0)}")
+        entry = ssl_registry.get_method(self._method_key)
+        method_display = entry.display_name if entry else self._method_key
+
+        self.progress.emit(f"Metode    : {method_display}")
+        self.progress.emit(f"Session ID: {data.get('session_id', 'N/A')}")
+        self.progress.emit(f"Timestamp : {data.get('timestamp', 'N/A')}")
+        self.progress.emit(f"Events    : {data.get('event_count', 0)}")
         self.progress.emit("=" * 60)
 
         events = data.get("events", [])
@@ -50,19 +58,22 @@ class _ProcessWorker(QObject):
             self.progress.emit(f"\nEVENT {num}")
             self.progress.emit("─" * 40)
 
-            pos, cluster_size, clusters_info = process_event_tdoa(event, self._mic_positions)
+            pos, cluster_size, clusters_info = process_event_tdoa(
+                event, self._mic_positions, method=self._method_key
+            )
             results.append({
-                "event_number":     num,
+                "event_number":      num,
                 "estimated_position": pos,
-                "cluster_size":     cluster_size,
-                "clusters_info":    clusters_info,
+                "cluster_size":      cluster_size,
+                "clusters_info":     clusters_info,
             })
 
             if pos is not None:
                 self.progress.emit(
                     f"Position  : [{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}] m"
                 )
-                self.progress.emit(f"Cluster   : {cluster_size} consistent solutions")
+                if cluster_size is not None:
+                    self.progress.emit(f"Cluster   : {cluster_size} consistent solutions")
             else:
                 self.progress.emit("Position  : FAILED (no valid solution)")
 
@@ -73,12 +84,12 @@ class _ProcessWorker(QObject):
 
 
 class ProcessPage(QWidget):
-    """Process tab: select a JSON file and run Bucher-Misra TDOA estimation.
+    """Process tab: pilih file JSON, pilih metode SSL, dan jalankan estimasi.
 
     Signals
     -------
-    log_message(str, str)         — shared log panel
-    results_saved(str)            — path to *_results.txt (for Visualize tab)
+    log_message(str, str)  — shared log panel
+    results_saved(str)     — path ke *_results.txt (untuk tab Visualize)
     """
 
     log_message   = Signal(str, str)
@@ -86,15 +97,21 @@ class ProcessPage(QWidget):
 
     def __init__(self, working_dir: str = "", parent=None):
         super().__init__(parent)
-        self._working_dir = working_dir or os.getcwd()
+        self._working_dir  = working_dir or os.getcwd()
+        self._custom_folder = ssl_registry.get_custom_folder()
         self._thread: QThread | None = None
         self._build_ui()
         self._refresh_file_list()
+        self._refresh_method_combo()
 
     def set_working_dir(self, path: str):
         self._working_dir = path
         self._dir_label.setText(path)
         self._refresh_file_list()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Build UI
+    # ─────────────────────────────────────────────────────────────────────────
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -109,13 +126,14 @@ class ProcessPage(QWidget):
         splitter.setHandleWidth(4)
         root.addWidget(splitter, stretch=1)
 
-        # LEFT: file selection
+        # ── Panel Kiri: file + method selection ──────────────────────────────
         left = QFrame()
         left.setObjectName("card")
         ll = QVBoxLayout(left)
         ll.setContentsMargins(10, 10, 10, 10)
         ll.setSpacing(8)
 
+        # Directory
         dir_header = QHBoxLayout()
         dir_header.addWidget(QLabel("Directory:"))
         self._dir_label = QLabel(self._working_dir)
@@ -124,6 +142,7 @@ class ProcessPage(QWidget):
         dir_header.addWidget(self._dir_label, stretch=1)
         ll.addLayout(dir_header)
 
+        # File list
         self._file_list = QListWidget()
         self._file_list.setAlternatingRowColors(True)
         ll.addWidget(self._file_list, stretch=1)
@@ -132,6 +151,7 @@ class ProcessPage(QWidget):
         self._file_count.setObjectName("statusHeading")
         ll.addWidget(self._file_count)
 
+        # Button row — file navigation
         btn_row = QHBoxLayout()
         self._process_btn = QPushButton("▶  PROCESS SELECTED")
         self._process_btn.setObjectName("btnPrimary")
@@ -148,9 +168,44 @@ class ProcessPage(QWidget):
         btn_row.addWidget(refresh_btn)
         ll.addLayout(btn_row)
 
+        # ── GroupBox Metode SSL ──────────────────────────────────────────────
+        method_group = QGroupBox("Metode Kalkulasi TDOA")
+        mg_layout = QVBoxLayout(method_group)
+        mg_layout.setContentsMargins(8, 8, 8, 8)
+        mg_layout.setSpacing(6)
+
+        self._method_combo = QComboBox()
+        self._method_combo.setToolTip(
+            "Pilih algoritma untuk mengestimasi posisi sumber suara dari data TDOA"
+        )
+        mg_layout.addWidget(self._method_combo)
+
+        method_btn_row = QHBoxLayout()
+
+        refresh_method_btn = QPushButton("↻  Refresh Metode")
+        refresh_method_btn.setToolTip("Muat ulang daftar metode (setelah menambah custom method)")
+        refresh_method_btn.clicked.connect(self._on_refresh_methods)
+        method_btn_row.addWidget(refresh_method_btn)
+
+        add_method_btn = QPushButton("➕  Add Custom Method…")
+        add_method_btn.setObjectName("btnSave")
+        add_method_btn.setToolTip(
+            "Tambahkan file .py berisi fungsi solve() sebagai metode kustom"
+        )
+        add_method_btn.clicked.connect(self._on_add_custom_method)
+        method_btn_row.addWidget(add_method_btn)
+
+        mg_layout.addLayout(method_btn_row)
+
+        self._custom_folder_lbl = QLabel(f"📂 Custom folder: {self._custom_folder}")
+        self._custom_folder_lbl.setObjectName("statusValue")
+        self._custom_folder_lbl.setWordWrap(True)
+        mg_layout.addWidget(self._custom_folder_lbl)
+
+        ll.addWidget(method_group)
         splitter.addWidget(left)
 
-        # RIGHT: log output
+        # ── Panel Kanan: log output ──────────────────────────────────────────
         right = QFrame()
         right.setObjectName("card")
         rl = QVBoxLayout(right)
@@ -179,9 +234,11 @@ class ProcessPage(QWidget):
         rl.addWidget(self._view_viz_btn)
 
         splitter.addWidget(right)
-        splitter.setSizes([300, 600])
+        splitter.setSizes([320, 580])
 
-    # ── Helpers ──────────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────
+    # Helpers
+    # ─────────────────────────────────────────────────────────────────────────
 
     def _refresh_file_list(self):
         self._file_list.clear()
@@ -192,9 +249,29 @@ class ProcessPage(QWidget):
             item.setData(Qt.ItemDataRole.UserRole, path)
             self._file_list.addItem(item)
         count = len(files)
-        self._file_count.setText(
-            f"{count} JSON file{'s' if count != 1 else ''} found"
-        )
+        self._file_count.setText(f"{count} JSON file{'s' if count != 1 else ''} found")
+
+    def _refresh_method_combo(self):
+        """Isi ulang dropdown metode dari registry."""
+        self._method_combo.clear()
+        methods = ssl_registry.get_available_methods()
+        default_key = ssl_registry.get_default_key()
+        default_idx = 0
+        for i, (key, display) in enumerate(methods):
+            source_tag = ""
+            entry = ssl_registry.get_method(key)
+            if entry and entry.source == "custom":
+                source_tag = " [Custom]"
+            self._method_combo.addItem(f"{display}{source_tag}", userData=key)
+            if key == default_key:
+                default_idx = i
+        self._method_combo.setCurrentIndex(default_idx)
+
+    def _get_selected_method_key(self) -> str:
+        idx = self._method_combo.currentIndex()
+        if idx < 0:
+            return ssl_registry.get_default_key()
+        return self._method_combo.itemData(idx) or ssl_registry.get_default_key()
 
     def _get_selected_path(self) -> str | None:
         items = self._file_list.selectedItems()
@@ -211,7 +288,9 @@ class ProcessPage(QWidget):
         self._log_area.clear()
         self._view_viz_btn.setVisible(False)
 
-    # ── Slots ─────────────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────
+    # Slots
+    # ─────────────────────────────────────────────────────────────────────────
 
     def _process_selected(self):
         path = self._get_selected_path()
@@ -221,20 +300,31 @@ class ProcessPage(QWidget):
 
         cfg = get_global_config_manager().get_config()
         mic_positions = cfg.get("mic_positions", {})
-        
+        method_key = self._get_selected_method_key()
+
+        entry = ssl_registry.get_method(method_key)
+        method_display = entry.display_name if entry else method_key
+
         self._clear_log()
         self._process_btn.setEnabled(False)
-        self.log_message.emit(f"Processing: {os.path.basename(path)}", "INFO")
-        self._append_log(f"Processing: {path}")
+        self.log_message.emit(f"Processing: {os.path.basename(path)} [{method_display}]", "INFO")
+        self._append_log(f"File      : {path}")
         self._append_log("=" * 60)
         self._append_log("Microphone Positions:")
         for name, pos_dict in mic_positions.items():
-            self._append_log(f"  {name}: [{pos_dict['x']:.3f}, {pos_dict['y']:.3f}, {pos_dict['z']:.3f}] m")
+            if isinstance(pos_dict, dict):
+                self._append_log(
+                    f"  {name}: [{pos_dict['x']:.3f}, {pos_dict['y']:.3f}, {pos_dict['z']:.3f}] m"
+                )
+            else:
+                self._append_log(
+                    f"  {name}: [{pos_dict[0]:.3f}, {pos_dict[1]:.3f}, {pos_dict[2]:.3f}] m"
+                )
         self._append_log("")
 
         self._current_file = path
         self._thread = QThread(self)
-        self._worker = _ProcessWorker(path, mic_positions)
+        self._worker = _ProcessWorker(path, mic_positions, method_key)
         self._worker.moveToThread(self._thread)
 
         self._thread.started.connect(self._worker.run)
@@ -255,7 +345,6 @@ class ProcessPage(QWidget):
         try:
             cfg = get_global_config_manager().get_config()
             mic_positions = cfg.get("mic_positions", {})
-            
             with open(filename) as f:
                 data = json.load(f)
             out_file = filename.replace(".json", "_results.txt")
@@ -278,5 +367,70 @@ class ProcessPage(QWidget):
             self.log_message.emit(f"Working directory: {d}", "INFO")
 
     def _open_in_visualize(self):
-        # Emitted to dashboard which switches tab and selects the file
         self.results_saved.emit(getattr(self, "_last_results_file", ""))
+
+    def _on_refresh_methods(self):
+        """Muat ulang custom methods dari folder eksternal, lalu refresh dropdown."""
+        ssl_registry.reload_custom_methods(self._custom_folder)
+        self._refresh_method_combo()
+        count = len([k for k, e in ssl_registry._registry.items() if e.source == "custom"])
+        self.log_message.emit(f"Metode di-refresh: {count} custom method(s) dimuat.", "INFO")
+        self._append_log(f"[INFO] Registry di-refresh. {count} custom method(s) tersedia.")
+
+    def _on_add_custom_method(self):
+        """
+        Buka file dialog, salin .py yang dipilih ke folder custom_ssl_methods,
+        lalu refresh registry dan dropdown.
+        """
+        src, _ = QFileDialog.getOpenFileName(
+            self,
+            "Pilih File Custom SSL Method",
+            os.path.expanduser("~"),
+            "Python Files (*.py)",
+        )
+        if not src:
+            return
+
+        dst = os.path.join(self._custom_folder, os.path.basename(src))
+
+        # Konfirmasi jika file sudah ada
+        if os.path.exists(dst):
+            reply = QMessageBox.question(
+                self,
+                "File Sudah Ada",
+                f"File '{os.path.basename(src)}' sudah ada di folder custom.\n"
+                "Timpa dengan file baru?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+        try:
+            shutil.copy2(src, dst)
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "Gagal Menyalin",
+                f"Tidak dapat menyalin file:\n{exc}",
+            )
+            return
+
+        # Reload registry
+        ssl_registry.reload_custom_methods(self._custom_folder)
+        self._refresh_method_combo()
+
+        self.log_message.emit(
+            f"Custom method '{os.path.basename(src)}' berhasil ditambahkan.", "INFO"
+        )
+        self._append_log(
+            f"[INFO] Custom method disalin ke: {dst}\n"
+            f"       Registry di-refresh — pilih metode dari dropdown."
+        )
+
+        QMessageBox.information(
+            self,
+            "Berhasil",
+            f"Custom method '{os.path.basename(src)}' berhasil ditambahkan!\n\n"
+            f"Lokasi: {dst}\n\n"
+            "Metode kini tersedia di dropdown.",
+        )

@@ -17,6 +17,11 @@ def main():
     from darat.ui.dashboard import MainDashboard
     from darat.network_setup import init_network
 
+    # Inisialisasi SSL Registry (metode kalkulasi TDOA)
+    from darat import ssl_registry
+    _custom_folder = ssl_registry.initialize()
+    print(f"[INIT] SSL Registry dimuat. Custom folder: {_custom_folder}")
+
     # Inisialisasi network auto-config sebelum GUI berjalan
     print("[INIT] Mempersiapkan Automasi Jaringan Darat...")
     if init_network():
