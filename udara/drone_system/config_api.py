@@ -21,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .config_manager import ConfigManager, ConfigError, ValidationError
+from . import filter_registry
 
 
 def _now_iso() -> str:
@@ -143,7 +144,31 @@ def create_app(config_manager: ConfigManager, audio_system=None) -> FastAPI:
         """
         return _ok(config_manager.get_schema())
 
-    # ── POST /config/reset ────────────────────────────────────────────
+    # ── GET /filter-schemas ───────────────────────────────────────────
+
+    @app.get("/filter-schemas", summary="Ambil skema parameter semua filter yang tersedia")
+    async def get_filter_schemas():
+        """
+        Kembalikan skema parameter default untuk setiap metode filter yang terdaftar.
+
+        Format response:
+        {
+          "spectral_gating": {
+            "display_name": "Spectral Gating (noisereduce)",
+            "params": {
+              "prop_decrease": {"value": 1.0, "type": "float", "min": 0.0, "max": 1.0, ...},
+              ...
+            }
+          },
+          "wavelet_denoising": {...},
+          ...
+        }
+
+        Digunakan oleh Ground Station untuk merender form parameter dinamis
+        sesuai metode filter yang dipilih user.
+        """
+        return _ok(filter_registry.get_all_schemas())
+
 
     @app.post("/config/reset", summary="Reset config ke nilai default")
     async def reset_config(request: Request):

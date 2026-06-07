@@ -324,6 +324,20 @@ _PARAM_SCHEMA = [
         "type": "boolean", "default": True,
         "category": "ground_only", "requires_restart": False, "unit": None,
     },
+    # ── Filter Method (Strategy Pattern) ────────────────────────────
+    {
+        "key": "filter_method", "label": "Filter Method",
+        "description": "Metode noise reduction yang digunakan (key dari filter_registry)",
+        "type": "string", "default": "spectral_gating",
+        "enum": ["spectral_gating", "wavelet_denoising", "wiener_stft", "passthrough"],
+        "category": "runtime", "requires_restart": False, "unit": None,
+    },
+    {
+        "key": "filter_configs", "label": "Filter Configs",
+        "description": "Parameter nested per metode filter: {method_key: {param: value, ...}}",
+        "type": "object", "default": {},
+        "category": "runtime", "requires_restart": False, "unit": None,
+    },
 ]
 
 # Mapping: key (snake_case) → nama variabel di config.py (UPPER_CASE)
@@ -363,6 +377,8 @@ _KEY_TO_CONFIG_VAR = {
     "chunk_duration_sec": "CHUNK_DURATION_SEC",
     "chunk_overlap_sec": "CHUNK_OVERLAP_SEC",
     "keep_audio_files": "KEEP_AUDIO_FILES",
+    "filter_method": "FILTER_METHOD",
+    "filter_configs": "FILTER_CONFIGS",
 }
 
 _GROUND_ONLY_KEYS: set[str] = {
@@ -590,6 +606,10 @@ class ConfigManager:
                 if isinstance(value, bool):
                     return value
                 return str(value).lower() in ("true", "1", "yes")
+            elif typ == "object":
+                if isinstance(value, dict):
+                    return value
+                raise ValidationError(f"'{key}' harus berupa object/dict", key)
             else:
                 return str(value)
         except (ValueError, TypeError) as e:

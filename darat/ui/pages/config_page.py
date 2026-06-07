@@ -162,6 +162,7 @@ class ConfigPage(QWidget):
         self._rest.drone_restarted.connect(
             lambda _: self.log_message.emit("Drone restart command accepted", "INFO")
         )
+        self._rest.filter_schemas_received.connect(self._on_filter_schemas_loaded)
 
         # 3. Errors
         self._rest.error.connect(self._show_error)
@@ -190,6 +191,7 @@ class ConfigPage(QWidget):
             self.log_message.emit("[CONFIG] Fetching initial configs from backends...", "DEBUG")
             self._rest.get_ground_config()
             self._rest.get_drone_config()
+            self._rest.get_filter_schemas()
 
     def _on_ground_config_loaded(self, cfg: dict):
         self.laptop_config.set_config(cfg)
@@ -198,3 +200,11 @@ class ConfigPage(QWidget):
     def _on_drone_config_loaded(self, cfg: dict):
         self.raspi_config.set_config(cfg)
         self.log_message.emit("[CONFIG] Drone config successfully synced with backend.", "INFO")
+
+    def _on_filter_schemas_loaded(self, schemas: dict):
+        """Update filter form di RaspiConfigPanel dengan skema dari drone."""
+        if schemas:
+            self.raspi_config.update_filter_schemas(schemas)
+            self.log_message.emit(
+                f"[CONFIG] Filter schemas loaded: {list(schemas.keys())}", "DEBUG"
+            )

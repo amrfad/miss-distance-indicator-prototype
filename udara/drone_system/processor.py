@@ -1,34 +1,37 @@
 """
 Audio Processing Module
-Mengelola ekstraksi channel dan noise reduction filtering
+Mengelola ekstraksi channel dan noise reduction filtering.
+
+Filtering kini menggunakan arsitektur plugin registry (Strategy Pattern).
+Tambahkan metode filter baru di builtin_filters/ atau custom_filters/
+tanpa mengubah file ini.
 """
 
 import os
 import ctypes
-from contextlib import redirect_stderr
 import numpy as np
 import soundfile as sf
 from .config import CHANNEL_INDICES
 from .config_manager import get_global_config_manager
+from . import filter_registry
 
-# Mute ALSA warnings
+# Backward compatibility for main.py
+try:
+    import noisereduce as nr
+    NOISEREDUCE_AVAILABLE = True
+except ImportError:
+    NOISEREDUCE_AVAILABLE = False
+
+
+# Mute ALSA warnings (Linux)
 try:
     _asound = ctypes.CDLL('libasound.so.2')
     try:
         _asound.snd_lib_error_set_handler(ctypes.c_void_p(0))
-    except:
+    except Exception:
         pass
-except:
-    pass
-
-# Import noisereduce dengan mute stderr
-try:
-    with open(os.devnull, "w") as d:
-        with redirect_stderr(d):
-            import noisereduce as nr
-    NOISEREDUCE_AVAILABLE = True
 except Exception:
-    NOISEREDUCE_AVAILABLE = False
+    pass
 
 
 class AudioProcessor:
@@ -43,7 +46,6 @@ class AudioProcessor:
             output_format (str): Format output untuk penyimpanan (S24_3LE atau S32_LE)
         """
         self.channel_indices = channel_indices
-        self.noisereduce_available = NOISEREDUCE_AVAILABLE
         self.output_format = output_format
         
         # Mapping ALSA format ke soundfile subtype
@@ -57,9 +59,7 @@ class AudioProcessor:
         # Get soundfile subtype
         self.sf_subtype = self.format_mapping.get(output_format, "PCM_24")
         print(f"[PROCESSOR] Output format: {output_format} -> {self.sf_subtype}")
-        
-        if not self.noisereduce_available:
-            print("[WARNING] noisereduce tidak tersedia, filtering akan dilewati")
+        print(f"[PROCESSOR] Available filters: {filter_registry.list_available_methods()}")
         
     def extract_channels(self, wav_path, output_dir, sr_override=None, channel_indices=None, normalize=None):
         """
@@ -131,115 +131,94 @@ class AudioProcessor:
             print(f"[ERROR] Extract failed: {e}")
             return [], None, None, 0
     
-    def filter_channels(self, data, sr, output_dir, 
-                       prop_decrease=None,
-                       freq_smooth=None,
-                       time_smooth=None,
-                       normalize=None,
-                       stationary=None,
+    def filter_channels(self, data, sr, output_dir,
                        channel_indices=None):
         """
-        Filter setiap channel dengan noise reduction
-        
+        Filter setiap channel menggunakan metode yang dikonfigurasi via filter_registry.
+
+        Metode filtering dan parameter-nya dibaca dari ConfigManager:
+          - cfg["filter_method"]: key metode (default: "spectral_gating")
+          - cfg["filter_configs"][method_key]: dict parameter untuk metode terpilih
+
         Args:
             data (np.ndarray): Audio data 2D (n_samples, n_channels)
             sr (int): Sample rate
             output_dir (str): Directory untuk menyimpan file output
-            prop_decrease (float): Proporsi pengurangan noise (0-1)
-            freq_smooth (int): Smoothing di domain frekuensi (Hz)
-            time_smooth (int): Smoothing di domain waktu (ms)
-            normalize (bool): Normalisasi output
-            stationary (bool): Gunakan stationary noise reduction
             channel_indices (tuple, optional): Override indices channel
-            
+
         Returns:
             tuple: (filtered_files, filtered_data)
                 - filtered_files (list): List path file yang sudah difilter
                 - filtered_data (np.ndarray): Audio data yang sudah difilter
         """
-        if not self.noisereduce_available:
-            print("[SKIP] Filtering dilewati (noisereduce tidak tersedia)")
-            return [], data
-            
         if data is None:
             return [], None
-            
+
         cfg = get_global_config_manager().get_config()
-        if prop_decrease is None: prop_decrease = cfg.get("prop_decrease", 1.0)
-        if freq_smooth is None: freq_smooth = cfg.get("freq_mask_smooth_hz", 500)
-        if time_smooth is None: time_smooth = cfg.get("time_mask_smooth_ms", 50)
-        if normalize is None: normalize = cfg.get("normalize", False)
-        if stationary is None: stationary = cfg.get("stationary", False)
-            
-        # Use provided indices or default
+
+        # ── Resolusi metode filter via registry ────────────────────────
+        method_key = cfg.get("filter_method", filter_registry.DEFAULT_METHOD)
+        FilterClass = filter_registry.get_method_class(method_key)
+
+        if FilterClass is None:
+            print(f"[FILTER] Tidak ada filter yang tersedia, melewati filtering")
+            return [], data
+
+        # Ambil parameter khusus untuk metode terpilih
+        method_params = cfg.get("filter_configs", {}).get(method_key, {})
+        filter_instance = FilterClass(**method_params)
+        print(f"[FILTER] Menggunakan metode: '{method_key}' ({FilterClass.get_display_name()})")
+
+        if not FilterClass.is_available():
+            print(f"[SKIP] Filter '{method_key}' tidak tersedia di environment ini")
+            return [], data
+
+        # ── Persiapan filtered_data array ─────────────────────────────
+        # Catatan: setiap FilterClass bertanggung jawab atas trimming internalnya
+        # (mis. SpectralGatingFilter melakukan trim 0.8s). Hasil apply() bisa
+        # lebih pendek dari input jika metode melakukan trimming.
+        # Untuk konsistensi multi-channel, kita inisiasi filtered_data dari data asli
+        # dan overwrite per-channel setelah filtering.
+        filtered_data = data.copy()
         indices_to_use = channel_indices if channel_indices is not None else self.channel_indices
-            
         filtered_files = []
-        
-        # Calculate trim samples (800ms) to remove spectral gating artifacts
-        trim_duration = 0.8
-        trim_samples = int(trim_duration * sr)
-        n_samples = data.shape[0]
-        
-        # Initialize filtered_data
-        if n_samples > 2 * trim_samples:
-            print(f"[FILTER] Trimming {trim_duration}s ({trim_samples} samples) from start and end")
-            filtered_data = data[trim_samples:-trim_samples, :].copy()
-        else:
-            print(f"[WARNING] Audio too short ({n_samples/sr:.2f}s) to trim {trim_duration}s. Keeping original length.")
-            trim_samples = 0
-            filtered_data = data.copy()
-            
         n_ch = data.shape[1]
-        
+
         for i, idx in enumerate(indices_to_use):
             if idx >= n_ch:
                 continue
-                
+
             ch = data[:, idx]
-            print(f"[FILTER] Processing mic{i}...")
-            
+            print(f"[FILTER] Processing mic{i} (channel {idx})...")
+
             try:
-                # Apply noise reduction
-                chf = nr.reduce_noise(
-                    y=ch, 
-                    sr=sr, 
-                    stationary=stationary,
-                    prop_decrease=prop_decrease,
-                    freq_mask_smooth_hz=freq_smooth,
-                    time_mask_smooth_ms=time_smooth
-                )
-                
-                # Trim if needed
-                if trim_samples > 0:
-                    chf = chf[trim_samples:-trim_samples]
-                
-                # Optional normalization
-                if normalize:
-                    peak = np.max(np.abs(chf))
-                    if peak > 0:
-                        chf = chf / peak
-                        
-                # Clip to valid range
-                chf = np.clip(chf, -1.0, 1.0)
-                
-                # Update filtered data array
+                chf = filter_instance.apply(ch, sr)
+
+                # Sinkronisasi panjang: jika filter melakukan trimming,
+                # potong filtered_data ke panjang terpendek yang konsisten
+                if chf.shape[0] != filtered_data.shape[0]:
+                    new_len = chf.shape[0]
+                    if new_len < filtered_data.shape[0]:
+                        filtered_data = filtered_data[:new_len, :]
+                    else:
+                        chf = chf[:filtered_data.shape[0]]
+
                 filtered_data[:, idx] = chf
-                
-                # Save filtered file
+
+                # Simpan file hasil
                 fname = os.path.join(output_dir, f"mic{i}_filtered.wav")
                 try:
                     sf.write(fname, chf, sr, subtype=self.sf_subtype)
                 except Exception as e:
                     print(f"[WARNING] Failed to save as {self.sf_subtype}, using default: {e}")
                     sf.write(fname, chf, sr)
-                    
+
                 filtered_files.append(fname)
-                
+
             except Exception as e:
                 print(f"[ERROR] Filter mic{i} failed: {e}")
-                
-        print(f"[FILTER] Completed {len(filtered_files)} files")
+
+        print(f"[FILTER] Completed {len(filtered_files)} files dengan metode '{method_key}'")
         return filtered_files, filtered_data
     
     def save_event_clips(self, data, sr, events, output_dir, padding=0.25, channel_indices=None):
@@ -313,11 +292,15 @@ class AudioProcessor:
     def get_available_features(self):
         """
         Dapatkan informasi feature yang tersedia
-        
+
         Returns:
-            dict: Dictionary berisi status feature
+            dict: Dictionary berisi status feature dan daftar filter yang tersedia
         """
+        available_methods = filter_registry.list_available_methods()
         return {
-            "noisereduce": self.noisereduce_available,
             "soundfile": True,  # Selalu ada karena sudah di-import
+            "filter_methods": available_methods,
+            "active_filter": get_global_config_manager().get_config().get(
+                "filter_method", filter_registry.DEFAULT_METHOD
+            ),
         }

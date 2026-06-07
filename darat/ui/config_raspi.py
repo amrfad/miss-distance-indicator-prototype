@@ -10,6 +10,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Signal, Qt
 
+from .widgets.filter_config_panel import FilterConfigPanel
+
 _LABEL_W = 140
 _COLUMN_SPACING = 20
 
@@ -72,6 +74,9 @@ class RaspiConfigPanel(QWidget):
         "event_padding_sec": 0.3,
         "post_recording_delay": 0.5,
         "main_loop_delay": 0.1,
+        # Filter Strategy Pattern
+        "filter_method": "spectral_gating",
+        "filter_configs": {},
     }
 
     def __init__(self, parent=None):
@@ -122,6 +127,7 @@ class RaspiConfigPanel(QWidget):
         col2.setSpacing(10)
         col2.addWidget(self._group_detection())
         col2.addWidget(self._group_noise_reduction())
+        col2.addWidget(self._group_filter_method())
         col2.addWidget(self._group_timing())
         col2.addStretch()
 
@@ -309,6 +315,40 @@ class RaspiConfigPanel(QWidget):
 
         return grp
 
+    def _group_filter_method(self):
+        grp = QGroupBox("🔄 FILTER METHOD")
+        g = QVBoxLayout(grp)
+        g.setSpacing(8)
+        g.setContentsMargins(12, 12, 12, 12)
+
+        # Keterangan singkat
+        info = QLabel(
+            "Pilih metode noise reduction. Parameter diadaptasi secara dinamis "
+            "dari skema yang dikirim drone via API."
+        )
+        info.setWordWrap(True)
+        info.setStyleSheet("font-size: 10px; color: #64748b;")
+        g.addWidget(info)
+
+        self.filter_panel = FilterConfigPanel()
+        self.filter_panel.filter_changed.connect(self._on_filter_changed)
+        g.addWidget(self.filter_panel)
+
+        return grp
+
+    def _on_filter_changed(self, method_key: str, params: dict):
+        """Dipanggil saat user mengubah metode atau parameter filter."""
+        # Tidak langsung save; menunggu tombol SAVE CONFIG
+        pass
+
+    def update_filter_schemas(self, schemas: dict):
+        """
+        Update dropdown dan form berdasarkan skema yang diterima dari drone.
+        Dipanggil dari ConfigPage setelah REST call GET /filter-schemas berhasil.
+        """
+        if hasattr(self, 'filter_panel'):
+            self.filter_panel.update_schemas(schemas)
+
     def _group_tdoa(self):
         grp = QGroupBox("🔒 TDOA / GCC-PHAT")
         g = QGridLayout(grp)
@@ -457,10 +497,17 @@ class RaspiConfigPanel(QWidget):
         self.post_recording_delay.setValue(c.get("post_recording_delay", 0.5))
         self.main_loop_delay.setValue(c.get("main_loop_delay", 0.1))
 
+        # Update filter panel
+        method = c.get("filter_method", "spectral_gating")
+        filter_configs = c.get("filter_configs", {})
+        method_params = filter_configs.get(method, {}) if isinstance(filter_configs, dict) else {}
+        if hasattr(self, 'filter_panel'):
+            self.filter_panel.set_config(method, method_params)
+
         self._restart_banner.setVisible(False)
 
     def _get_values_from_ui(self) -> dict:
-        return {
+        base = {
             "operation_mode": self.operation_mode.currentText(),
             "active_profile": self.active_profile.currentText(),
             "base_output_dir": self.base_output_dir.text(),
@@ -492,6 +539,11 @@ class RaspiConfigPanel(QWidget):
             "post_recording_delay": self.post_recording_delay.value(),
             "main_loop_delay": self.main_loop_delay.value(),
         }
+        # Tambahkan filter payload dari FilterConfigPanel
+        if hasattr(self, 'filter_panel'):
+            filter_payload = self.filter_panel.get_filter_config_payload()
+            base.update(filter_payload)
+        return base
 
     def get_runtime_config(self) -> dict:
         all_cfg = self._get_values_from_ui()

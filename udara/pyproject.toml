@@ -23,6 +23,7 @@ dependencies = [
     "pyserial==3.5",
     "python-dateutil==2.9.0.post0",
     "pytz==2025.2",
+    "pywavelets>=1.9.0",
     "scipy==1.16.3",
     "six==1.17.0",
     "sounddevice==0.5.3",

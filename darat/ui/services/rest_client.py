@@ -64,6 +64,7 @@ class RestClient(QObject):
     drone_status_received  = Signal(dict)
     drone_restarted        = Signal(dict)
     drone_schema_received  = Signal(dict)
+    filter_schemas_received = Signal(dict)  # GET /filter-schemas
 
     # Ground station API
     ground_config_received = Signal(dict)
@@ -163,6 +164,13 @@ class RestClient(QObject):
         self._fire(
             "POST", f"{self.drone_base}/system/restart", {},
             lambda d: self.drone_restarted.emit(d.get("data", {})),
+        )
+
+    def get_filter_schemas(self):
+        """Ambil skema parameter untuk semua metode filter yang tersedia di drone."""
+        self._fire(
+            "GET", f"{self.drone_base}/filter-schemas", None,
+            lambda d: self.filter_schemas_received.emit(d.get("data", {})),
         )
 
     # ── Ground station endpoints ─────────────────────────────────────────
