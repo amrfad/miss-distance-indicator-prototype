@@ -34,12 +34,24 @@ def main():
     app.setOrganizationName("MDI")
 
     # Load stylesheet
-    qss_path = os.path.join(
-        os.path.dirname(__file__), "ui", "styles", "mdi_theme.qss"
-    )
+    if getattr(sys, 'frozen', False):
+        # Di dalam bundle PyInstaller
+        base_dir = sys._MEIPASS
+        qss_path = os.path.join(base_dir, "darat", "ui", "styles", "mdi_theme.qss")
+    else:
+        # Mode development biasa
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        qss_path = os.path.join(base_dir, "ui", "styles", "mdi_theme.qss")
+
     if os.path.exists(qss_path):
-        with open(qss_path, "r", encoding="utf-8") as f:
-            app.setStyleSheet(f.read())
+        try:
+            with open(qss_path, "r", encoding="utf-8") as f:
+                app.setStyleSheet(f.read())
+            print(f"[INIT] Stylesheet loaded successfully from: {qss_path}")
+        except Exception as e:
+            print(f"[INIT] ERROR: Gagal membaca stylesheet di {qss_path}: {e}")
+    else:
+        print(f"[INIT] WARNING: Stylesheet tidak ditemukan di: {qss_path}")
             
 
     # Default font
