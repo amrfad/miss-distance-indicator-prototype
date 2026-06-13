@@ -16,11 +16,14 @@ import math
 from PySide6.QtCore import Qt, QPointF, QSize
 from PySide6.QtGui import (
     QColor, QFont, QPainter, QPen, QBrush, QRadialGradient, QFontMetricsF,
+    QPolygonF,
 )
 from PySide6.QtWidgets import (
     QWidget, QSizePolicy, QVBoxLayout, QHBoxLayout, QTabWidget,
     QPushButton, QLabel,
 )
+
+from .mesh_loader import load_plane_mesh
 
 
 # ── Palet warna radar militer (phosphor green) ─────────────────────────────
@@ -121,6 +124,7 @@ class _RadarCanvas(QWidget):
 
         self._events: list[dict] = []
         self._max_range: float   = 20.0   # diatur dari luar via set_range()
+        self._vertices, self._faces = load_plane_mesh()
 
     # ── Public API ─────────────────────────────────────────────────────────
 
@@ -170,6 +174,7 @@ class _RadarCanvas(QWidget):
         self._draw_background(p, center, radius)
         self._draw_rings(p, center, radius)
         self._draw_sectors(p, center, radius)
+        self._draw_aircraft_mesh(p, center, radius)
         self._draw_crosshair(p, center)
         self._draw_events(p, center, radius)
 
@@ -264,6 +269,39 @@ class _RadarCanvas(QWidget):
         s = 5
         p.drawLine(QPointF(center.x() - s, center.y()), QPointF(center.x() + s, center.y()))
         p.drawLine(QPointF(center.x(), center.y() - s), QPointF(center.x(), center.y() + s))
+
+    def _draw_aircraft_mesh(self, p: QPainter, center: QPointF, radius: float):
+        """Draw the projected plane mesh wireframe on this 2D canvas."""
+        if not self._vertices or not self._faces:
+            return
+
+        def get_val(v, key):
+            if key == "x":
+                return v[0]
+            elif key == "y":
+                return v[1]
+            elif key == "z":
+                return v[2]
+            return 0.0
+
+        projected_pts = []
+        for v in self._vertices:
+            h_val = get_val(v, self._horiz_key)
+            v_val = get_val(v, self._vert_key)
+            sp = self._world_to_screen(h_val, v_val, center, radius)
+            projected_pts.append(sp)
+
+        # Draw wireframe faces
+        pen = QPen(QColor(_C_CROSSHAIR.red(), _C_CROSSHAIR.green(), _C_CROSSHAIR.blue(), 180))
+        pen.setWidthF(0.8)
+        p.setPen(pen)
+
+        brush = QBrush(QColor(_C_CROSSHAIR.red(), _C_CROSSHAIR.green(), _C_CROSSHAIR.blue(), 15))
+        p.setBrush(brush)
+
+        for face in self._faces:
+            poly = QPolygonF([projected_pts[idx] for idx in face])
+            p.drawPolygon(poly)
 
     def _draw_events(self, p: QPainter, center: QPointF, radius: float):
         if not self._events:

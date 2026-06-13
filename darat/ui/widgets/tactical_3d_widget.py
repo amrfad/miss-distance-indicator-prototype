@@ -22,6 +22,8 @@ from PySide6.QtWidgets import (
     QGridLayout,
 )
 
+from .mesh_loader import load_plane_mesh
+
 
 # ── Palet warna ─────────────────────────────────────────────────────────────
 _C_BG         = QColor("#060d06")
@@ -35,10 +37,9 @@ _C_AXIS_Z     = QColor("#3399ff")
 _C_EVENT_DOT  = QColor("#ffff00")
 _C_SPIKE      = QColor("#ffcc00")
 _C_OOB        = QColor("#ff6600")
-_C_ACFT       = QColor("#00ffff")
+_C_ACFT       = QColor("#33cc33")
 
-_MAX_R_M      = 20.0
-_RINGS        = [5, 10, 15, 20]
+_RANGE_STEPS  = [5, 10, 15, 20]
 _MAX_Z_M      = 15.0
 
 _BTN_STYLE = """
@@ -106,6 +107,12 @@ class _IsoCanvas(QWidget):
         self._yaw   = 30.0    # rotasi horizontal
         self._pitch = 25.0    # elevasi dari bidang datar
         self._roll  = 0.0     # roll (biasanya 0)
+        self._vertices, self._faces = load_plane_mesh()
+        self._max_range = 20.0    # default range
+
+    def set_range(self, max_range_m: float):
+        self._max_range = max_range_m
+        self.update()
 
     def set_data(self, events: list[dict]):
         self._events = [e for e in events if e.get("valid", False)]
@@ -148,7 +155,7 @@ class _IsoCanvas(QWidget):
         cx = w * 0.5
         cy = h * 0.52
         # Scale: isi ~100% lebar/tinggi minimum
-        scale = min(w, h) * 1.00 / (_MAX_R_M * 2)
+        scale = min(w, h) * 1.00 / (self._max_range * 2)
         return cx, cy, scale
 
     # ── Paint ────────────────────────────────────────────────────────────────
@@ -167,8 +174,9 @@ class _IsoCanvas(QWidget):
 
     def _draw_ground_rings(self, p: QPainter):
         """Ring elips di bidang XY (z=0) setelah dirotasi."""
-        for ring_m in _RINGS:
-            is_outer = (ring_m == _MAX_R_M)
+        ring_m = 5.0
+        while ring_m <= self._max_range + 0.01:
+            is_outer = abs(ring_m - self._max_range) < 0.01
             pen = QPen(_C_GRID_MAJ if is_outer else _C_GRID)
             pen.setWidthF(1.0 if is_outer else 0.6)
             pen.setStyle(Qt.PenStyle.SolidLine if is_outer else Qt.PenStyle.DotLine)
@@ -189,8 +197,10 @@ class _IsoCanvas(QWidget):
             p.setPen(_C_TEXT_DIM)
             font = QFont("IBM Plex Mono", 6)
             p.setFont(font)
-            if ring_m < _MAX_R_M:
-                p.drawText(QPointF(label_pt.x() + 2, label_pt.y()), f"{ring_m}m")
+            if ring_m < self._max_range:
+                p.drawText(QPointF(label_pt.x() + 2, label_pt.y()), f"{ring_m:.0f}m")
+
+            ring_m += 5.0
 
     def _draw_ground_radials(self, p: QPainter):
         """Garis radial dari pusat ke tepi di bidang XY."""
@@ -202,8 +212,8 @@ class _IsoCanvas(QWidget):
         for ang_deg in range(0, 360, 30):
             ang = math.radians(ang_deg)
             tip = self._project(
-                _MAX_R_M * math.cos(ang),
-                _MAX_R_M * math.sin(ang),
+                self._max_range * math.cos(ang),
+                self._max_range * math.sin(ang),
                 0,
             )
             p.drawLine(origin, tip)
@@ -211,7 +221,7 @@ class _IsoCanvas(QWidget):
     def _draw_axes(self, p: QPainter):
         """Sumbu X (merah), Y (hijau), Z (biru)."""
         origin = self._project(0, 0, 0)
-        ax_len = _MAX_R_M * 0.40
+        ax_len = self._max_range * 0.40
 
         font = QFont("IBM Plex Mono", 7)
         font.setBold(True)
@@ -265,10 +275,10 @@ class _IsoCanvas(QWidget):
             x, y, z = ev.get("x", 0.0), ev.get("y", 0.0), ev.get("z", 0.0)
             num = ev.get("event_number", "?")
             dist_xy = math.hypot(x, y)
-            oob = dist_xy > _MAX_R_M
+            oob = dist_xy > self._max_range
 
             if oob:
-                factor = (_MAX_R_M - 0.5) / dist_xy
+                factor = (self._max_range - 0.5) / dist_xy
                 x, y = x * factor, y * factor
                 ev_color = _C_OOB
             else:
@@ -316,15 +326,43 @@ class _IsoCanvas(QWidget):
             p.drawText(QPointF(sp_3d.x() + 7, sp_3d.y() + fm.height()), f"z={z:.1f}m")
 
     def _draw_acft(self, p: QPainter):
-        origin = self._project(0, 0, 0)
-        pen = QPen(_C_ACFT)
-        pen.setWidthF(1.2)
+        if not self._vertices or not self._faces:
+            # Fallback to simple crosshair if mesh is not loaded
+            origin = self._project(0, 0, 0)
+            pen = QPen(_C_ACFT)
+            pen.setWidthF(1.2)
+            p.setPen(pen)
+            s = 5
+            p.drawLine(QPointF(origin.x() - s, origin.y()), QPointF(origin.x() + s, origin.y()))
+            p.drawLine(QPointF(origin.x(), origin.y() - s), QPointF(origin.x(), origin.y() + s))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(origin, 3.5, 3.5)
+            return
+
+        # Project all 3D vertices using self._project
+        # Note: v is (xw, yw, zw) where:
+        # xw is widget x
+        # yw is widget y
+        # zw is widget z
+        projected_pts = [self._project(v[0], v[1], v[2]) for v in self._vertices]
+
+        # Draw wireframe faces
+        pen = QPen(QColor(_C_ACFT.red(), _C_ACFT.green(), _C_ACFT.blue(), 180))
+        pen.setWidthF(0.8)
         p.setPen(pen)
-        s = 5
-        p.drawLine(QPointF(origin.x() - s, origin.y()), QPointF(origin.x() + s, origin.y()))
-        p.drawLine(QPointF(origin.x(), origin.y() - s), QPointF(origin.x(), origin.y() + s))
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawEllipse(origin, 3.5, 3.5)
+
+        brush = QBrush(QColor(_C_ACFT.red(), _C_ACFT.green(), _C_ACFT.blue(), 15))
+        p.setBrush(brush)
+
+        for face in self._faces:
+            poly = QPolygonF([projected_pts[idx] for idx in face])
+            p.drawPolygon(poly)
+
+        # Draw a small center indicator dot at (0, 0, 0)
+        origin = self._project(0, 0, 0)
+        p.setBrush(QBrush(_C_ACFT))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawEllipse(origin, 2.0, 2.0)
 
     def _draw_hud(self, p: QPainter):
         font = QFont("IBM Plex Mono", 7)
@@ -334,7 +372,7 @@ class _IsoCanvas(QWidget):
             f"YAW:   {self._yaw:.0f}°",
             f"PITCH: {self._pitch:.0f}°",
             f"ROLL:  {self._roll:.0f}°",
-            f"RANGE: {_MAX_R_M:.0f}m",
+            f"RANGE: {self._max_range:.0f}m",
         ]
         x, y = 8, 16
         for line in lines:
@@ -349,6 +387,7 @@ class Tactical3DWidget(QWidget):
         super().__init__(parent)
         self.setObjectName("tactical3DWidget")
         self._canvas = _IsoCanvas()
+        self._range_idx = len(_RANGE_STEPS) - 1   # default to 20m (last index)
         self._build_ui()
 
     def _build_ui(self):
@@ -358,7 +397,7 @@ class Tactical3DWidget(QWidget):
 
         root.addWidget(self._canvas, stretch=1)
 
-        # ── Panel kontrol rotasi ──────────────────────────────────────────
+        # ── Panel kontrol rotasi & zoom ───────────────────────────────────
         ctrl = QWidget()
         ctrl.setStyleSheet("background-color: #060d06; border-top: 1px solid #1a4a1a;")
         grid = QGridLayout(ctrl)
@@ -384,6 +423,8 @@ class Tactical3DWidget(QWidget):
         grid.addWidget(lbl("YAW (Z-axis)"),   0, 0, 1, 2)
         grid.addWidget(lbl("PITCH (X-axis)"),  0, 2, 1, 2)
         grid.addWidget(lbl("ROLL (Y-axis)"),   0, 4, 1, 2)
+        grid.addWidget(lbl("ZOOM"),            0, 6, 1, 2)
+        grid.addWidget(lbl("VIEW"),            0, 8, 1, 1)
 
         # Row 1: buttons
         grid.addWidget(btn("◀ -30°", lambda: self._canvas.rotate_yaw(-30)),   1, 0)
@@ -393,13 +434,40 @@ class Tactical3DWidget(QWidget):
         grid.addWidget(btn("◀ -30°", lambda: self._canvas.rotate_roll(-30)),  1, 4)
         grid.addWidget(btn("+30° ▶", lambda: self._canvas.rotate_roll(+30)),  1, 5)
 
+        # Zoom buttons
+        self._btn_zout = btn("−", self._zoom_out)
+        self._btn_zout.setToolTip("Zoom Out")
+        self._btn_zin = btn("+", self._zoom_in)
+        self._btn_zin.setToolTip("Zoom In")
+        grid.addWidget(self._btn_zout, 1, 6)
+        grid.addWidget(self._btn_zin, 1, 7)
+
         # Reset button
-        reset_btn = QPushButton("⟳  RESET VIEW")
+        reset_btn = QPushButton("⟳ RESET")
         reset_btn.setStyleSheet(_BTN_STYLE)
         reset_btn.clicked.connect(self._canvas.reset_view)
-        grid.addWidget(reset_btn, 1, 6)
+        grid.addWidget(reset_btn, 1, 8)
 
         root.addWidget(ctrl)
+        self._apply_range()
+
+    def _zoom_in(self):
+        """Perkecil range (zoom in): 20→15→10→5."""
+        if self._range_idx > 0:
+            self._range_idx -= 1
+            self._apply_range()
+
+    def _zoom_out(self):
+        """Perbesar range (zoom out): 5→10→15→20."""
+        if self._range_idx < len(_RANGE_STEPS) - 1:
+            self._range_idx += 1
+            self._apply_range()
+
+    def _apply_range(self):
+        max_r = _RANGE_STEPS[self._range_idx]
+        self._canvas.set_range(max_r)
+        self._btn_zin.setEnabled(self._range_idx > 0)
+        self._btn_zout.setEnabled(self._range_idx < len(_RANGE_STEPS) - 1)
 
     def set_data(self, events: list[dict]):
         self._canvas.set_data(events)
