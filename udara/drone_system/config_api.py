@@ -20,8 +20,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .config_manager import ConfigManager, ConfigError, ValidationError
-from . import filter_registry
+from .core.config_manager import ConfigManager, ConfigError, ValidationError
+from .tdoa import filter_registry
 
 
 def _now_iso() -> str:

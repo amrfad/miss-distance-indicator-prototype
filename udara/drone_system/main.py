@@ -6,13 +6,13 @@ Entry point untuk sistem drone audio detection dengan serial communication
 
 import sys
 import time
-from .controller import DroneAudioSystem
-from .serial_handler import SerialHandler
-from .config import (
+from .core.controller import DroneAudioSystem
+from .io.serial_handler import SerialHandler
+from .core.config import (
     MAIN_LOOP_DELAY
 )
-from .processor import NOISEREDUCE_AVAILABLE
-from .config_manager import ConfigManager, ConfigError, get_global_config_manager
+from .audio.processor import NOISEREDUCE_AVAILABLE
+from .core.config_manager import ConfigManager, ConfigError, get_global_config_manager
 from .config_api import start_api_thread
 
 
@@ -149,7 +149,7 @@ def _handle_set_config(serial_handler, config_manager, audio_system):
         str: Response string untuk dikirim ke ground
     """
     import json
-    from .config import CONFIG_TX_START_MARKER, CONFIG_TX_END_MARKER
+    from .core.config import CONFIG_TX_START_MARKER, CONFIG_TX_END_MARKER
 
     if config_manager is None:
         return "ERROR:SET_CONFIG:SERVER_ERROR:ConfigManager tidak tersedia"

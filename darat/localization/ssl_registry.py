@@ -52,10 +52,10 @@ _BUILTIN_ORDER = ["bucher_misra", "chan_ho", "pivot", "consensus"]
 
 # Nama modul built-in yang diketahui beserta package-nya
 _BUILTIN_MODULES = {
-    "bucher_misra": "darat.builtin_ssl.bucher_misra",
-    "chan_ho":       "darat.builtin_ssl.chan_ho",
-    "pivot":         "darat.builtin_ssl.pivot",
-    "consensus":     "darat.builtin_ssl.consensus",
+    "bucher_misra": "darat.localization.builtin_ssl.bucher_misra",
+    "chan_ho":       "darat.localization.builtin_ssl.chan_ho",
+    "pivot":         "darat.localization.builtin_ssl.pivot",
+    "consensus":     "darat.localization.builtin_ssl.consensus",
 }
 
 

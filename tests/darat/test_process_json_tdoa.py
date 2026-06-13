@@ -23,15 +23,15 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "."))
 
 # Inisialisasi registry sebelum semua test (satu kali)
-from darat import ssl_registry as _registry_module
+from darat.localization import ssl_registry as _registry_module
 _registry_module.initialize()
 
-from darat.process_json_tdoa import (
+from darat.localization.process_json_tdoa import (
     process_event_tdoa,
     save_results_to_file,
 )
-from darat.builtin_ssl import bucher_misra as _bm
-from darat.config_manager import get_global_config_manager
+from darat.localization.builtin_ssl import bucher_misra as _bm
+from darat.core.config_manager import get_global_config_manager
 
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "fixtures")
 
@@ -191,7 +191,7 @@ class TestProcessEventTdoa(unittest.TestCase):
 
     def test_dead_code_not_in_process_module(self):
         """Pastikan simbol lama yang dipindah tidak ada di process_json_tdoa."""
-        import darat.process_json_tdoa as m
+        import darat.localization.process_json_tdoa as m
         self.assertFalse(
             hasattr(m, "bucher_misra_3d"),
             "bucher_misra_3d harus sudah dipindah ke builtin_ssl.bucher_misra"

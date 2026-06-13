@@ -17,7 +17,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".", "udara"))
 
-from drone_system.tdoa import (
+from drone_system.tdoa.tdoa import (
     calculate_tdoa_gcc_phat,
     calculate_cross_correlation,
     calculate_all_tdoa,

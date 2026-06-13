@@ -15,10 +15,10 @@ def main():
     from PySide6.QtWidgets import QApplication
     from PySide6.QtGui import QFont
     from darat.ui.dashboard import MainDashboard
-    from darat.network_setup import init_network
+    from darat.api.network_setup import init_network
 
     # Inisialisasi SSL Registry (metode kalkulasi TDOA)
-    from darat import ssl_registry
+    from darat.localization import ssl_registry
     _custom_folder = ssl_registry.initialize()
     print(f"[INIT] SSL Registry dimuat. Custom folder: {_custom_folder}")
 

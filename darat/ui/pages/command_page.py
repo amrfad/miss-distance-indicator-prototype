@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Signal, Qt, QTimer
 
-from ...config import CMD_START_RECORD, CMD_STOP_RECORD, CMD_STATUS
+from ...core.config import CMD_START_RECORD, CMD_STOP_RECORD, CMD_STATUS
 
 
 class CommandPage(QWidget):

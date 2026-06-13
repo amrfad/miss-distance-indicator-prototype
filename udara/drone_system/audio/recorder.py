@@ -11,12 +11,12 @@ import subprocess
 import shlex
 import re
 import numpy as np
-from .config import (
+from ..core.config import (
     CHANNELS,
     DEVICE_PROFILES,
     get_take_indices
 )
-from .config_manager import get_global_config_manager
+from ..core.config_manager import get_global_config_manager
 
 
 class AudioRecorder:

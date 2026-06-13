@@ -11,10 +11,10 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QTimer, Slot
 
-from ..serial_manager import SerialManager
-from ..file_transfer import FileTransferManager
-from ..json_receiver import JsonReceiver
-from ..config_manager import get_global_config_manager
+from ..io.serial_manager import SerialManager
+from ..core.file_transfer import FileTransferManager
+from ..io.json_receiver import JsonReceiver
+from ..core.config_manager import get_global_config_manager
 
 from .services.serial_bridge import SerialBridge
 from .services.rest_client import RestClient
@@ -291,12 +291,12 @@ class MainDashboard(QMainWindow):
         self._log.log("Serial disconnected.", "INFO")
 
     def _do_start_record_command(self):
-        from ..config import CMD_START_RECORD
+        from ..core.config import CMD_START_RECORD
         self._serial_bridge.send_command(CMD_START_RECORD)
         self._log.log("Recording start command sent", "INFO")
 
     def _do_stop_record_command(self):
-        from ..config import CMD_STOP_RECORD
+        from ..core.config import CMD_STOP_RECORD
         self._serial_bridge.send_command(CMD_STOP_RECORD)
         self._log.log("Recording stop command sent", "INFO")
 
@@ -357,7 +357,7 @@ class MainDashboard(QMainWindow):
 
     def _start_config_api(self):
         try:
-            from ..config_api import start_ground_api_thread
+            from ..api.config_api import start_ground_api_thread
             start_ground_api_thread(
                 config_manager=self._config_manager,
                 host="0.0.0.0",

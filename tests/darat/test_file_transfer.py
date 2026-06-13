@@ -19,7 +19,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "."))
 
-from darat.file_transfer import FileTransferManager, get_file_type
+from darat.core.file_transfer import FileTransferManager, get_file_type
 
 
 class TestGetFileType(unittest.TestCase):

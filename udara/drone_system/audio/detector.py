@@ -7,7 +7,7 @@ import os
 import glob
 import numpy as np
 import librosa
-from .config_manager import get_global_config_manager
+from ..core.config_manager import get_global_config_manager
 
 
 class EventDetector:

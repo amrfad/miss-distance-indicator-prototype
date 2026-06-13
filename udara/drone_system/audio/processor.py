@@ -11,9 +11,9 @@ import os
 import ctypes
 import numpy as np
 import soundfile as sf
-from .config import CHANNEL_INDICES
-from .config_manager import get_global_config_manager
-from . import filter_registry
+from ..core.config import CHANNEL_INDICES
+from ..core.config_manager import get_global_config_manager
+from ..tdoa import filter_registry
 
 # Backward compatibility for main.py
 try:

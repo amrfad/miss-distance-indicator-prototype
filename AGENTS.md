@@ -45,16 +45,23 @@ Prototype/
 ├── AGENTS.md                     ← dokumen ini
 ├── darat/                        ← Ground Unit (working version)
 │   ├── __init__.py
-│   ├── main.py                   ← Entry point: python darat/main.py (PyQt6 launcher)
-│   ├── config.py                 ← SEMUA KONSTANTA darat di sini
-│   ├── file_transfer.py          ← State machine file transfer
-│   ├── json_receiver.py          ← Penerimaan JSON via serial
-│   ├── serial_manager.py         ← Serial port management
-│   ├── process_json_tdoa.py      ← Bucher-Misra solver + TDOA processing
+│   ├── main.py                   ← Entry point: python darat/main.py (PySide6 launcher)
 │   ├── visualize_results.py      ← Matplotlib visualization
-│   ├── config_manager.py         ← Manajer konfigurasi (thread-safe, JSON storage)
-│   ├── config_api.py             ← FastAPI daemon untuk konfigurasi ground station
-│   └── ui/                       ← Package antarmuka pengguna (PyQt6)
+│   ├── core/                     ← Konfigurasi & state management
+│   │   ├── config.py             ← Konstanta Ground Unit
+│   │   ├── config_manager.py     ← Konfigurasi dinamis
+│   │   └── file_transfer.py      ← Penerimaan & perutean berkas serial
+│   ├── io/                       ← Komunikasi serial & I/O
+│   │   ├── serial_manager.py     ← Driver Serial port
+│   │   └── json_receiver.py      ← Parser data JSON [START]/[END]
+│   ├── localization/                      ← Algoritma Sound Source Localization (SSL)
+│   │   ├── process_json_tdoa.py  ← Orchestrator TDOA solver
+│   │   ├── ssl_registry.py       ← Registry plugin SSL
+│   │   └── builtin_ssl/          ← Implementasi solver (Bucher-Misra, Consensus, dll)
+│   ├── api/                      ← Jaringan & REST Daemon
+│   │   ├── config_api.py         ← REST API untuk konfigurasi UI
+│   │   └── network_setup.py      ← Automasi Static IP Adapter
+│   └── ui/                       ← Package antarmuka pengguna (PySide6)
 │       ├── main.py
 │       ├── dashboard.py          ← Main window & tab coordinator
 │       ├── pages/                ← Layar-layar utama (Config, Command, Process, Visualize)
@@ -64,17 +71,29 @@ Prototype/
 ├── udara/
 │   ├── run_drone_system.py       ← Entry point drone
 │   └── drone_system/
-│       ├── config.py             ← SEMUA KONSTANTA drone di sini
 │       ├── main.py               ← Orchestrator online/offline mode
-│       ├── controller.py         ← Pipeline: record→process→detect→TDOA→send
-│       ├── recorder.py           ← arecord subprocess + device probing
-│       ├── processor.py          ← Channel extraction + noise reduction
-│       ├── detector.py           ← RMS-based event detection
-│       ├── logger.py             ← JSON/CSV persistence
-│       ├── serial_handler.py     ← Command read/write serial
-│       ├── comms.py              ← File transfer via serial
-│       └── tdoa.py               ← GCC-PHAT + cross-correlation
+│       ├── config_api.py         ← REST API untuk konfigurasi drone
+│       ├── network_setup.py      ← Konfigurasi IP drone
+│       ├── core/                 ← Konfigurasi & pengendali utama
+│       │   ├── config.py         ← Konstanta Drone Unit
+│       │   ├── config_manager.py ← Konfigurasi dinamis
+│       │   └── controller.py     ← Pipeline: record→process→detect→TDOA→send
+│       ├── audio/                ← Audio capture & digital signal processing
+│       │   ├── recorder.py       ← arecord subprocess + device probing
+│       │   ├── processor.py      ← Channel extraction
+│       │   ├── detector.py       ← RMS-based event detection
+│       │   └── logger.py         ← JSON/CSV persistence
+│       ├── io/                   ← Serial I/O
+│       │   ├── serial_handler.py ← Read/write serial command
+│       │   └── comms.py          ← File transfer via serial
+│       └── tdoa/                 ← Pemrosesan matematika TDOA
+│           ├── tdoa.py           ← GCC-PHAT + cross-correlation
+│           ├── filter_registry.py← Registry filter noise reduction
+│           ├── base_filter.py    ← Kelas dasar plugin filter audio
+│           ├── builtin_filters/  ← Filter bawaan (Spectral Gating, Wiener, dll)
+│           └── custom_filters/   ← Filter kustom eksternal
 └── tests/
+```
     ├── README.md
     ├── darat/
     │   ├── fixtures/sample_tdoa.json
@@ -91,18 +110,18 @@ Prototype/
 
 ### 3.1 Konfigurasi — Selalu via Config File
 
-**Darat:** Semua konstanta ada di `darat/config.py`
+**Darat:** Semua konstanta ada di `darat/core/config.py`
 - Posisi mikrofon → `MIC_POSITIONS`
 - Command strings → `CMD_STANDBY`, `CMD_START_RECORD`, dst.
 - Serial parameters → `BAUD_RATE`, `SERIAL_TIMEOUT`
 
-**Udara:** Semua konstanta ada di `udara/drone_system/config.py`
+**Udara:** Semua konstanta ada di `udara/drone_system/core/config.py`
 - Device profiles → `DEVICE_PROFILES`, `ACTIVE_PROFILE`
 - Audio parameters → `SAMPLE_RATE`, `HOP_LENGTH`, dst.
 - Detection thresholds → `DETECT_RATIO`, `FILTER_RATIO`, `MIN_DURATION`
 
 > [!WARNING]
-> **JANGAN hardcode konstanta di dalam method/function.** Selalu referensikan dari config.py.
+> **JANGAN hardcode konstanta di dalam method/function.** Selalu referensikan dari core/config.py.
 
 ### 3.2 Protokol Komunikasi Serial
 
@@ -116,8 +135,8 @@ Prototype/
 
 > [!IMPORTANT]
 > Jangan ubah format marker tanpa mengupdate **kedua sisi** sekaligus:
-> - Pengirim: `udara/drone_system/comms.py` (START_MARKER, END_MARKER)
-> - Penerima: `darat/json_receiver.py` (deteksi marker `[START]` dan `[END]`)
+> - Pengirim: `udara/drone_system/io/comms.py` (START_MARKER, END_MARKER)
+> - Penerima: `darat/io/json_receiver.py` (deteksi marker `[START]` dan `[END]`)
 
 ### 3.3 Working Directory — Jangan `os.chdir()`
 
@@ -174,7 +193,7 @@ class NamaPage(QWidget):
 
 ## 5. Menambah Command Serial Baru
 
-1. Tambahkan konstanta di `darat/config.py`:
+1. Tambahkan konstanta di `darat/core/config.py`:
 ```python
 CMD_NEW_COMMAND = "NEW_CMD"
 ```
@@ -197,7 +216,7 @@ elif command == "NEW_CMD":
 
 ## 6. Menambah Mikrofon / Mengubah Posisi Mikrofon
 
-Edit `darat/config.py`:
+Edit `darat/core/config.py`:
 ```python
 MIC_POSITIONS = {
     "mic0": np.array([x, y, z]),
@@ -205,7 +224,7 @@ MIC_POSITIONS = {
 }
 ```
 
-Edit juga `udara/drone_system/config.py`:
+Edit juga `udara/drone_system/core/config.py`:
 - `NUM_MICS_H8` — jumlah mic yang digunakan
 - `DEVICE_PROFILES["H8"]["take_indices_6mic"]` — channel indices
 
@@ -213,12 +232,12 @@ Edit juga `udara/drone_system/config.py`:
 
 ## 7. Menambah Format File yang Didukung
 
-Edit `darat/config.py`:
+Edit `darat/core/config.py`:
 ```python
 SUPPORTED_EXTENSIONS = [".mp4", ".wav", ".txt", ".json", ".new_ext"]
 ```
 
-Edit `darat/file_transfer.py` — fungsi `get_file_type()`:
+Edit `darat/core/file_transfer.py` — fungsi `get_file_type()`:
 ```python
 mapping = {
     ".mp4": "Video",
@@ -260,21 +279,21 @@ Berikut adalah invariant sistem yang harus dipertahankan:
 
 | Invariant | Lokasi |
 |-----------|--------|
-| Bucher-Misra membutuhkan tepat 4 stasiun | `process_json_tdoa.py:bucher_misra_3d()` |
-| TDOA dihitung untuk semua pasangan C(n,2) | `tdoa.py:calculate_all_tdoa()` |
-| Cluster dipilih berdasarkan ukuran terbesar | `process_json_tdoa.py:process_event_tdoa()` |
+| Bucher-Misra membutuhkan tepat 4 stasiun | `darat/localization/process_json_tdoa.py:bucher_misra_3d()` |
+| TDOA dihitung untuk semua pasangan C(n,2) | `udara/drone_system/tdoa/tdoa.py:calculate_all_tdoa()` |
+| Cluster dipilih berdasarkan ukuran terbesar | `darat/localization/process_json_tdoa.py:process_event_tdoa()` |
 | JSON diterima hanya setelah `STOP_REC` command | `command_page.py:_stop_record()` |
-| File transfer menggunakan START/END marker | `file_transfer.py`, `comms.py` |
-| Noise reduction menggunakan GCC-PHAT default | `config.py:IS_GCC_PHAT = True` |
+| File transfer menggunakan START/END marker | `darat/core/file_transfer.py`, `udara/drone_system/io/comms.py` |
+| Noise reduction menggunakan GCC-PHAT default | `darat/core/config.py:IS_GCC_PHAT = True` |
 
 ---
 
 ## 10. Known Limitations & Technical Debt
 
-1. **`json_receiver.py`** — Loop blocking dengan polling 100ms. Jika perlu improvement,
+1. **`darat/io/json_receiver.py`** — Loop blocking dengan polling 100ms. Jika perlu improvement,
    pertimbangkan asyncio atau event-driven approach.
 
-2. **`comms.py` + `serial_handler.py`** — Dua class yang membuka koneksi serial terpisah
+2. **`comms.py` + `serial_handler.py`** — Dua class di `udara/drone_system/io/` yang membuka koneksi serial terpisah
    ke port yang sama. Perlu dikonsolidasi jika ada masalah konflik port.
 
 3. **Clustering EPS hardcoded** — `eps=1.0` meter di `process_event_tdoa()`. Saat ini `CLUSTER_EPS` ada di `config_laptop.py` namun belum sepenuhnya tersambung ke parameter `process_event_tdoa()`. Perlu integrasi argumen lebih lanjut.

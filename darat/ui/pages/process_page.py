@@ -16,9 +16,9 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Signal, Qt, QThread, QObject
 from PySide6.QtGui import QColor
 
-from ...process_json_tdoa import process_event_tdoa, save_results_to_file
-from ...config_manager import get_global_config_manager
-from ... import ssl_registry
+from ...localization.process_json_tdoa import process_event_tdoa, save_results_to_file
+from ...core.config_manager import get_global_config_manager
+from ...localization import ssl_registry
 
 
 class _ProcessWorker(QObject):

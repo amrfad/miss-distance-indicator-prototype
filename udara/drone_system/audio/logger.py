@@ -6,7 +6,7 @@ Menyimpan hasil deteksi ke file JSON
 import os
 import json
 import csv
-from .config import LOG_TIMESTAMP_FORMAT
+from ..core.config import LOG_TIMESTAMP_FORMAT
 
 
 class DataLogger:

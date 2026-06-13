@@ -17,7 +17,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "."))
 
-from darat.config_manager import (
+from darat.core.config_manager import (
     GroundConfigManager,
     NullStore,
     ValidationError,

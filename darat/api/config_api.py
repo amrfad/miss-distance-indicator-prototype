@@ -22,7 +22,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .config_manager import GroundConfigManager, ConfigError
+from ..core.config_manager import GroundConfigManager, ConfigError
 
 
 def _now_iso() -> str:

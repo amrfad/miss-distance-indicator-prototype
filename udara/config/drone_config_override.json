@@ -14,7 +14,7 @@
   "events_json": "session_events.json",
   "tdoa_json": "session_tdoa.json",
   "api_host": "0.0.0.0",
-  "api_port": 5000,
+  "api_port": 5005,
   "min_duration": 0.25,
   "max_gap": 0.1,
   "detect_ratio": 0.2,

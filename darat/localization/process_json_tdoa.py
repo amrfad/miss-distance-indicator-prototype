@@ -17,7 +17,7 @@ from typing import Optional, Tuple, List
 import numpy as np
 from scipy.optimize import least_squares
 
-from .config_manager import get_global_config_manager
+from ..core.config_manager import get_global_config_manager
 from . import ssl_registry
 
 

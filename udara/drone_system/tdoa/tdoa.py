@@ -1,7 +1,7 @@
 import numpy as np
 import itertools
 from scipy.signal import correlate
-from .config_manager import get_global_config_manager
+from ..core.config_manager import get_global_config_manager
 
 def calculate_tdoa_gcc_phat(sig1, sig2, fs):
     """

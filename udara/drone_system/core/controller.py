@@ -20,12 +20,12 @@ import numpy as np
 import soundfile as sf
 from datetime import datetime
 
-from .recorder import AudioRecorder
-from .processor import AudioProcessor
-from .detector import EventDetector
-from .logger import DataLogger
-from .tdoa import calculate_all_tdoa
-from .comms import SerialCommunicator
+from ..audio.recorder import AudioRecorder
+from ..audio.processor import AudioProcessor
+from ..audio.detector import EventDetector
+from ..audio.logger import DataLogger
+from ..tdoa.tdoa import calculate_all_tdoa
+from ..io.comms import SerialCommunicator
 from .config import (
     EVENT_PADDING_SEC,
     TIMESTAMP_FORMAT,

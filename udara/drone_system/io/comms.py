@@ -2,7 +2,7 @@ import serial
 import time
 import sys
 import os
-from .config_manager import get_global_config_manager
+from ..core.config_manager import get_global_config_manager
 
 START_MARKER = b"[START]\n"
 END_MARKER = b"\n[END]\n"

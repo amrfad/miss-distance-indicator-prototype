@@ -9,11 +9,11 @@ import json
 
 from PySide6.QtCore import QObject, Signal
 
-from ...serial_manager import SerialManager
-from ...config import (
+from ...io.serial_manager import SerialManager
+from ...core.config import (
     CMD_SET_CONFIG, CONFIG_TX_START_MARKER, CONFIG_TX_END_MARKER,
 )
-from ...config_manager import get_global_config_manager
+from ...core.config_manager import get_global_config_manager
 
 
 class SerialBridge(QObject):

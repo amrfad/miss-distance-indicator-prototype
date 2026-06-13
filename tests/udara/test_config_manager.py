@@ -16,7 +16,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "."))
 
-from udara.drone_system.config_manager import (
+from udara.drone_system.core.config_manager import (
     ConfigManager,
     NullStore,
     ValidationError,

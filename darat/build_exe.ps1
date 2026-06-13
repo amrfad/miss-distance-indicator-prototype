@@ -62,10 +62,10 @@ pyinstaller --noconfirm `
     --hidden-import="starlette" `
     --hidden-import="anyio" `
     --hidden-import="h11" `
-    --hidden-import="darat.builtin_ssl.bucher_misra" `
-    --hidden-import="darat.builtin_ssl.chan_ho" `
-    --hidden-import="darat.builtin_ssl.pivot" `
-    --hidden-import="darat.builtin_ssl.consensus" `
+    --hidden-import="darat.localization.builtin_ssl.bucher_misra" `
+    --hidden-import="darat.localization.builtin_ssl.chan_ho" `
+    --hidden-import="darat.localization.builtin_ssl.pivot" `
+    --hidden-import="darat.localization.builtin_ssl.consensus" `
     --add-data "darat/ui/styles/mdi_theme.qss;darat/ui/styles" `
     @AddBinaryArgs `
     darat/main.py
