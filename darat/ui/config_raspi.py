@@ -126,7 +126,6 @@ class RaspiConfigPanel(QWidget):
         col2 = QVBoxLayout()
         col2.setSpacing(10)
         col2.addWidget(self._group_detection())
-        col2.addWidget(self._group_noise_reduction())
         col2.addWidget(self._group_filter_method())
         col2.addWidget(self._group_timing())
         col2.addStretch()
@@ -267,51 +266,6 @@ class RaspiConfigPanel(QWidget):
         self.ignore_time.setSuffix(" s")
         g.addWidget(_lbl("Ignore Time:"), 4, 0)
         g.addWidget(self.ignore_time, 4, 1)
-
-        return grp
-
-    def _group_noise_reduction(self):
-        grp = QGroupBox("🔄 NOISE REDUCTION")
-        g = QGridLayout(grp)
-        g.setSpacing(8)
-        g.setContentsMargins(12, 12, 12, 12)
-
-        self.prop_decrease = QDoubleSpinBox()
-        self.prop_decrease.setRange(0.0, 1.0)
-        self.prop_decrease.setSingleStep(0.1)
-        self.prop_decrease.setDecimals(1)
-        g.addWidget(_lbl("Prop. Decrease:"), 0, 0)
-        g.addWidget(self.prop_decrease, 0, 1)
-
-        self.normalization_percentile = QDoubleSpinBox()
-        self.normalization_percentile.setRange(0.1, 100.0)
-        self.normalization_percentile.setSingleStep(0.1)
-        self.normalization_percentile.setDecimals(1)
-        self.normalization_percentile.setSuffix(" %")
-        g.addWidget(_lbl("Norm. Percentile:"), 1, 0)
-        g.addWidget(self.normalization_percentile, 1, 1)
-
-        self.stationary = QCheckBox("Stationary noise mode")
-        g.addWidget(_lbl("Stationary:"), 2, 0)
-        g.addWidget(self.stationary, 2, 1)
-
-        self.normalize = QCheckBox("Normalize output audio")
-        g.addWidget(_lbl("Normalize:"), 3, 0)
-        g.addWidget(self.normalize, 3, 1)
-
-        self.freq_mask_smooth_hz = QSpinBox()
-        self.freq_mask_smooth_hz.setRange(10, 2000)
-        self.freq_mask_smooth_hz.setSingleStep(10)
-        self.freq_mask_smooth_hz.setSuffix(" Hz")
-        g.addWidget(_lbl("Freq Mask Smooth:"), 4, 0)
-        g.addWidget(self.freq_mask_smooth_hz, 4, 1)
-
-        self.time_mask_smooth_ms = QSpinBox()
-        self.time_mask_smooth_ms.setRange(1, 200)
-        self.time_mask_smooth_ms.setSingleStep(5)
-        self.time_mask_smooth_ms.setSuffix(" ms")
-        g.addWidget(_lbl("Time Mask Smooth:"), 5, 0)
-        g.addWidget(self.time_mask_smooth_ms, 5, 1)
 
         return grp
 
@@ -486,14 +440,8 @@ class RaspiConfigPanel(QWidget):
         self.max_gap.setValue(c.get("max_gap", 0.1))
         self.ignore_time.setValue(c.get("ignore_time", 0.5))
         self.event_padding.setValue(c.get("event_padding_sec", 0.3))
-        self.prop_decrease.setValue(c.get("prop_decrease", 1.0))
-        self.stationary.setChecked(c.get("stationary", False))
-        self.normalize.setChecked(c.get("normalize", False))
-        self.freq_mask_smooth_hz.setValue(c.get("freq_mask_smooth_hz", 100))
-        self.time_mask_smooth_ms.setValue(c.get("time_mask_smooth_ms", 10))
         self.hop_length.setValue(c.get("hop_length", 512))
         self.frame_length.setValue(c.get("frame_length", 1024))
-        self.normalization_percentile.setValue(c.get("normalization_percentile", 99.9))
         self.post_recording_delay.setValue(c.get("post_recording_delay", 0.5))
         self.main_loop_delay.setValue(c.get("main_loop_delay", 0.1))
 
@@ -528,14 +476,8 @@ class RaspiConfigPanel(QWidget):
             "max_gap": self.max_gap.value(),
             "ignore_time": self.ignore_time.value(),
             "event_padding_sec": self.event_padding.value(),
-            "prop_decrease": self.prop_decrease.value(),
-            "stationary": self.stationary.isChecked(),
-            "normalize": self.normalize.isChecked(),
-            "freq_mask_smooth_hz": self.freq_mask_smooth_hz.value(),
-            "time_mask_smooth_ms": self.time_mask_smooth_ms.value(),
             "hop_length": self.hop_length.value(),
             "frame_length": self.frame_length.value(),
-            "normalization_percentile": self.normalization_percentile.value(),
             "post_recording_delay": self.post_recording_delay.value(),
             "main_loop_delay": self.main_loop_delay.value(),
         }

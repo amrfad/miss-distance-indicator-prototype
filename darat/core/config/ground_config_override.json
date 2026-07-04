@@ -2,9 +2,8 @@
   "baud_rate": 230400,
   "serial_timeout": 1.0,
   "serial_port": "COM3",
-  "use_tcp": false,
   "raspi_ip": "10.99.99.2",
-  "tcp_port": 5000,
+  "drone_port": 5000,
   "speed_of_sound": 343.0,
   "cluster_eps": 1.0,
   "supported_extensions": [
@@ -13,17 +12,15 @@
     ".txt",
     ".json"
   ],
-  "update_interval_s": 0.1,
-  "plot_buffer_size": 1000,
   "mic_positions": {
     "mic0": {
       "x": -1.58,
-      "y": 0.77,
+      "y": 0.75,
       "z": 0.09
     },
     "mic1": {
       "x": 1.6,
-      "y": 0.77,
+      "y": 0.76,
       "z": 0.09
     },
     "mic2": {

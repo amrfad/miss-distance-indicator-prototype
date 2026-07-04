@@ -31,13 +31,10 @@ class LaptopConfigPanel(QWidget):
         "serial_port": "COM3",
         "baud_rate": 230400,
         "serial_timeout": 1.0,
-        "use_tcp": False,
         "raspi_ip": "10.99.99.2",
-        "tcp_port": 5000,
+        "drone_port": 5000,
         "speed_of_sound": 343.0,
         "cluster_eps": 1.0,
-        "update_interval_s": 0.1,
-        "plot_buffer_size": 1000,
         "mic_positions": _DEFAULT_MIC_POSITIONS,
     }
 
@@ -69,14 +66,13 @@ class LaptopConfigPanel(QWidget):
         col1 = QVBoxLayout()
         col1.setSpacing(10)
         col1.addWidget(self._group_serial())
-        col1.addWidget(self._group_processing())
+        col1.addWidget(self._group_network())
         col1.addStretch()
 
         # Column 2
         col2 = QVBoxLayout()
         col2.setSpacing(10)
-        col2.addWidget(self._group_network())
-        col2.addWidget(self._group_visualization())
+        col2.addWidget(self._group_processing())
         col2.addStretch()
 
         columns_layout.addLayout(col1, stretch=1)
@@ -128,19 +124,16 @@ class LaptopConfigPanel(QWidget):
         return grp
 
     def _group_network(self):
-        grp = QGroupBox("🌐 NETWORK / TCP (ALTERNATIVE)")
+        grp = QGroupBox("🌐 NETWORK SETTINGS")
         form = self._make_form(grp)
-
-        self.use_tcp = QCheckBox("Use TCP socket instead of serial port")
-        form.addRow(self.use_tcp)
 
         self.raspi_ip = QLineEdit()
         self.raspi_ip.setPlaceholderText("10.99.99.2")
         form.addRow("Drone IP Address:", self.raspi_ip)
 
-        self.tcp_port = QSpinBox()
-        self.tcp_port.setRange(1024, 65535)
-        form.addRow("TCP Port:", self.tcp_port)
+        self.drone_port = QSpinBox()
+        self.drone_port.setRange(1024, 65535)
+        form.addRow("Drone API Port:", self.drone_port)
 
         return grp
 
@@ -162,24 +155,6 @@ class LaptopConfigPanel(QWidget):
         self.cluster_eps.setSuffix(" m")
         self.cluster_eps.setToolTip("Bucher-Misra cluster grouping threshold (CLUSTER_EPS)")
         form.addRow("Cluster EPS:", self.cluster_eps)
-
-        return grp
-
-    def _group_visualization(self):
-        grp = QGroupBox("📊 VISUALIZATION SETTINGS")
-        form = self._make_form(grp)
-
-        self.update_interval = QDoubleSpinBox()
-        self.update_interval.setRange(0.033, 2.0)
-        self.update_interval.setSingleStep(0.033)
-        self.update_interval.setDecimals(3)
-        self.update_interval.setSuffix(" s")
-        form.addRow("Update Interval:", self.update_interval)
-
-        self.plot_buffer_size = QSpinBox()
-        self.plot_buffer_size.setRange(100, 20000)
-        self.plot_buffer_size.setSingleStep(100)
-        form.addRow("Plot Buffer Size:", self.plot_buffer_size)
 
         return grp
 
@@ -262,23 +237,16 @@ class LaptopConfigPanel(QWidget):
         merged["mic_positions"] = {k: dict(v) for k, v in _DEFAULT_MIC_POSITIONS.items()}
         merged.update(cfg)
 
-        # Handle backend's potential legacy key
-        if "update_interval_ms" in merged and "update_interval_s" not in merged:
-            merged["update_interval_s"] = merged.pop("update_interval_ms") / 1000.0
-
         self.current_config = merged
         c = self.current_config
 
         self.serial_port.setText(c.get("serial_port", "COM3"))
         self.baud_rate.setCurrentText(str(c.get("baud_rate", 230400)))
         self.serial_timeout.setValue(c.get("serial_timeout", 1.0))
-        self.use_tcp.setChecked(c.get("use_tcp", False))
         self.raspi_ip.setText(c.get("raspi_ip", "10.99.99.2"))
-        self.tcp_port.setValue(c.get("tcp_port", 5000))
+        self.drone_port.setValue(c.get("drone_port", 5000))
         self.speed_of_sound.setValue(c.get("speed_of_sound", 343.0))
         self.cluster_eps.setValue(c.get("cluster_eps", 1.0))
-        self.update_interval.setValue(c.get("update_interval_s", 0.1))
-        self.plot_buffer_size.setValue(c.get("plot_buffer_size", 1000))
         self._populate_mic_positions(c.get("mic_positions", _DEFAULT_MIC_POSITIONS))
 
     def _populate_mic_positions(self, positions: dict):
@@ -293,13 +261,10 @@ class LaptopConfigPanel(QWidget):
             "serial_port": self.serial_port.text(),
             "baud_rate": int(self.baud_rate.currentText()),
             "serial_timeout": self.serial_timeout.value(),
-            "use_tcp": self.use_tcp.isChecked(),
             "raspi_ip": self.raspi_ip.text(),
-            "tcp_port": self.tcp_port.value(),
+            "drone_port": self.drone_port.value(),
             "speed_of_sound": self.speed_of_sound.value(),
             "cluster_eps": self.cluster_eps.value(),
-            "update_interval_s": self.update_interval.value(),
-            "plot_buffer_size": self.plot_buffer_size.value(),
             "mic_positions": self._get_mic_positions_from_ui(),
         }
 

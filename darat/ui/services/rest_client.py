@@ -93,6 +93,9 @@ class RestClient(QObject):
     def set_drone_ip(self, ip: str):
         self._drone_ip = ip
 
+    def set_drone_port(self, port: int):
+        self._drone_port = int(port)
+
     @property
     def drone_base(self) -> str:
         return f"http://{self._drone_ip}:{self._drone_port}"
