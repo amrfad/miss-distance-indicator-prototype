@@ -16,6 +16,8 @@ CMD_INFO = "INFO"
 CMD_PROCESS = "PROCESS"
 CMD_TRANSMIT = "TRANSMIT"
 CMD_SET_CONFIG = "SET_CONFIG"
+CMD_RESTART = "RESTART"
+
 
 # ============================================================
 # CONFIG UI SERIAL PROTOCOL

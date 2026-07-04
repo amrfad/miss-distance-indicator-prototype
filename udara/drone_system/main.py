@@ -16,6 +16,9 @@ from .core.config_manager import ConfigManager, ConfigError, get_global_config_m
 from .config_api import start_api_thread
 
 
+EXIT_CODE_RESTART = 5
+
+
 def print_header():
     """Print header aplikasi"""
     cfg = get_global_config_manager().get_config()
@@ -126,8 +129,18 @@ def process_command(command, audio_system, serial_handler=None, config_manager=N
     elif command == "SET_CONFIG":
         response = _handle_set_config(serial_handler, config_manager, audio_system)
         
+    elif command == "RESTART":
+        if audio_system:
+            audio_system.restart_requested = True
+        if serial_handler:
+            serial_handler.send_response("OK:Restarting drone system...")
+            print("[RESPONSE] OK:Restarting drone system...")
+            time.sleep(0.5)  # Jeda agar serial terkirim
+        raise KeyboardInterrupt("Restart requested via serial")
+
     else:
         response = f"ERROR:Unknown command '{command}'"
+
     
     # Kirim response (hanya jika ada serial_handler)
     if response:
@@ -278,6 +291,10 @@ def run_online_mode(audio_system, config_manager=None):
             print("[SYSTEM] Stopping active recording...")
             audio_system.recorder.stop_recording()
         
+        if getattr(audio_system, "restart_requested", False):
+            print("[SYSTEM] Restart requested, returning exit code 5")
+            return EXIT_CODE_RESTART
+        
     finally:
         serial_handler.close()
         print("[SYSTEM] Shutdown complete")
@@ -302,6 +319,9 @@ def run_offline_mode(audio_system, config_manager=None):
             
     except KeyboardInterrupt:
         print("\n\n[SYSTEM] Shutting down...")
+        if getattr(audio_system, "restart_requested", False):
+            print("[SYSTEM] Restart requested, returning exit code 5")
+            return EXIT_CODE_RESTART
     
     finally:
         # Stop recording jika masih aktif

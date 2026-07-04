@@ -149,7 +149,7 @@ class ConfigPage(QWidget):
             lambda: self.log_message.emit("Drone config reset not fully implemented in API", "WARNING")
         )
         self.raspi_config.restart_drone_requested.connect(
-            lambda: self._rest.restart_drone()
+            self.restart_requested.emit
         )
 
         # 2. REST API -> UI (Load / Update Confirmation)

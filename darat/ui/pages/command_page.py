@@ -6,11 +6,11 @@ import threading
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QFrame, QPushButton, QLabel, QTextEdit,
+    QFrame, QPushButton, QLabel, QTextEdit, QMessageBox,
 )
 from PySide6.QtCore import Signal, Qt, QTimer
 
-from ...core.config import CMD_START_RECORD, CMD_STOP_RECORD, CMD_STATUS
+from ...core.config import CMD_START_RECORD, CMD_STOP_RECORD, CMD_STATUS, CMD_RESTART
 
 
 class CommandPage(QWidget):
@@ -111,13 +111,20 @@ class CommandPage(QWidget):
         self.process_btn.setEnabled(False)
         self.process_btn.clicked.connect(self._on_process_data)
 
-        # Susun di grid 2x3
+        self.restart_drone_btn = QPushButton("🔄 RESTART DRONE")
+        self.restart_drone_btn.setObjectName("btnReset")
+        self.restart_drone_btn.setMinimumHeight(44)
+        self.restart_drone_btn.setEnabled(False)
+        self.restart_drone_btn.clicked.connect(self._on_restart_drone)
+
+        # Susun di grid 3x2
         btn_layout.addWidget(self.connect_btn, 0, 0)
         btn_layout.addWidget(self.disconnect_btn, 0, 1)
         btn_layout.addWidget(self.start_rec_btn, 1, 0)
         btn_layout.addWidget(self.stop_rec_btn, 1, 1)
         btn_layout.addWidget(self.status_btn, 2, 0)
         btn_layout.addWidget(self.process_btn, 2, 1)
+        btn_layout.addWidget(self.restart_drone_btn, 3, 0, 1, 2)
 
         root.addWidget(btn_group)
 
@@ -163,6 +170,7 @@ class CommandPage(QWidget):
         self.status_btn.setEnabled(connected)
         self.start_rec_btn.setEnabled(connected and not self._is_recording)
         self.stop_rec_btn.setEnabled(connected and self._is_recording)
+        self.restart_drone_btn.setEnabled(connected)
 
         has_json = self._last_json_file is not None and os.path.exists(self._last_json_file)
         self.process_btn.setEnabled(connected and has_json)
@@ -222,6 +230,19 @@ class CommandPage(QWidget):
             self._rx_thread.join(timeout=0.5)
         self._is_recording = False
         self._update_ui_state()
+
+    def _on_restart_drone(self):
+        reply = QMessageBox.question(
+            self,
+            "Restart Drone",
+            "Apakah Anda yakin ingin me-restart kode drone di udara?\n"
+            "Semua proses perekaman yang sedang berjalan akan dihentikan.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self._log("Sending RESTART command to drone via serial...", "WARNING")
+            self._serial.send_command(CMD_RESTART)
 
     def _on_check_status(self):
         self._log("Sending STATUS command to drone...", "INFO")

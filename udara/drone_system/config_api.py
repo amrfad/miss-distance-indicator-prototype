@@ -232,26 +232,33 @@ def create_app(config_manager: ConfigManager, audio_system=None) -> FastAPI:
             "serial_connected": _check_serial_connected(audio_system),
         })
 
-    # ── POST /system/restart ──────────────────────────────────────────
-
     @app.post("/system/restart", summary="Restart proses drone")
     async def restart_system():
         """
-        Perintahkan sistem drone untuk keluar.
-
-        Catatan implementasi: Saat ini hanya melakukan sys.exit() agar
-        dapat di-restart oleh supervisor/systemd. Untuk restart otomatis,
-        konfigurasikan systemd dengan Restart=on-failure.
-
-        Hanya panggil setelah semua perubahan 🔒 selesai dikonfirmasi user.
+        Perintahkan sistem drone untuk keluar secara langsung.
+        Menghentikan perekaman jika aktif dan keluar menggunakan os._exit(5)
+        agar systemd dapat melakukan restart otomatis.
         """
+        if audio_system:
+            audio_system.restart_requested = True
+            try:
+                if audio_system.recorder and audio_system.recorder.is_recording():
+                    print("[CONFIG API] Stopping active recording before restart...")
+                    audio_system.recorder.stop_recording()
+            except Exception as e:
+                print(f"[CONFIG API] Error stopping recording: {e}")
+
         def _delayed_exit():
             import time
-            time.sleep(2)
-            sys.exit(0)
+            import os
+            time.sleep(1)
+            print("[CONFIG API] Exiting process now via os._exit(5)...")
+            sys.stdout.flush()
+            os._exit(5)
 
         threading.Thread(target=_delayed_exit, daemon=True).start()
-        return _ok({"message": "Drone system exiting in 2 seconds (restart via systemd)"})
+        return _ok({"message": "Drone system restarting in 1 second..."})
+
 
     return app
 

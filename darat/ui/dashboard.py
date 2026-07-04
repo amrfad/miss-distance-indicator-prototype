@@ -45,6 +45,7 @@ class MainDashboard(QMainWindow):
         self._serial_bridge = SerialBridge(self)
         self._rest_client = RestClient(
             drone_ip=cfg.get("raspi_ip", "10.99.99.2"),
+            drone_port=int(cfg.get("drone_port", 5000)),
             parent=self
         )
         self._ft_log_msgs: list[str] = []
@@ -313,8 +314,13 @@ class MainDashboard(QMainWindow):
 
     @Slot()
     def _do_restart_drone(self):
-        self._rest_client.restart_drone()
-        self._log.log("Restart command sent to drone via REST.", "WARNING")
+        if self._serial_bridge.is_connected():
+            self._log.log("Sending restart command to drone via Serial...", "WARNING")
+            from ..core.config import CMD_RESTART
+            self._serial_bridge.send_command(CMD_RESTART)
+        else:
+            self._log.log("Serial not connected. Sending restart command to drone via REST...", "WARNING")
+            self._rest_client.restart_drone()
 
     @Slot(bool, str)
     def _on_connection_changed(self, connected: bool, port: str):
@@ -371,6 +377,9 @@ class MainDashboard(QMainWindow):
         if "raspi_ip" in data:
             self._rest_client.set_drone_ip(data["raspi_ip"])
             self._log.log(f"RestClient target IP updated: {data['raspi_ip']}", "INFO")
+        if "drone_port" in data:
+            self._rest_client.set_drone_port(data["drone_port"])
+            self._log.log(f"RestClient target port updated: {data['drone_port']}", "INFO")
 
     def closeEvent(self, event):
         self._serial_bridge.disconnect()
