@@ -430,6 +430,9 @@ _VALIDATION_RULES: list[tuple[str, Any, Optional[str]]] = [
     ("operation_mode ∈ {ONLINE, OFFLINE}",
      lambda c: c["operation_mode"] in {"ONLINE", "OFFLINE"},
      "operation_mode"),
+    ("chunk_duration_sec > chunk_overlap_sec",
+     lambda c: c["chunk_duration_sec"] > c["chunk_overlap_sec"],
+     "chunk_duration_sec"),
 ]
 
 

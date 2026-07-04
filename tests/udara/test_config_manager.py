@@ -64,6 +64,11 @@ class TestDroneConfigManager(unittest.TestCase):
             self.manager.update({"detect_ratio": 0.5, "filter_ratio": 0.4})
         self.assertIn("filter_ratio >= detect_ratio", str(ctx.exception))
 
+    def test_validation_chunk_duration_ge_overlap(self):
+        with self.assertRaises(ValidationError) as ctx:
+            self.manager.update({"chunk_duration_sec": 5.0, "chunk_overlap_sec": 6.0})
+        self.assertIn("chunk_duration_sec > chunk_overlap_sec", str(ctx.exception))
+
     def test_validation_detect_ratio_range(self):
         with self.assertRaises(ValidationError):
             self.manager.update({"detect_ratio": -0.1})

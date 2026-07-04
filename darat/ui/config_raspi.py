@@ -20,6 +20,7 @@ _RESTART_REQUIRED = {
     "sample_rate", "active_profile", "num_mics_h8", "base_output_dir",
     "is_gcc_phat", "arecord_terminate_timeout",
     "events_csv", "events_json", "tdoa_json",
+    "chunk_duration_sec", "chunk_overlap_sec",
 }
 
 
@@ -74,6 +75,9 @@ class RaspiConfigPanel(QWidget):
         "event_padding_sec": 0.3,
         "post_recording_delay": 0.5,
         "main_loop_delay": 0.1,
+        "chunk_duration_sec": 5.0,
+        "chunk_overlap_sec": 1.0,
+        "keep_audio_files": True,
         # Filter Strategy Pattern
         "filter_method": "spectral_gating",
         "filter_configs": {},
@@ -128,6 +132,7 @@ class RaspiConfigPanel(QWidget):
         col2.addWidget(self._group_detection())
         col2.addWidget(self._group_filter_method())
         col2.addWidget(self._group_timing())
+        col2.addWidget(self._group_streaming())
         col2.addStretch()
 
         columns_layout.addLayout(col1, stretch=1)
@@ -359,6 +364,34 @@ class RaspiConfigPanel(QWidget):
 
         return grp
 
+    def _group_streaming(self):
+        grp = QGroupBox("🔒 STREAMING & CHUNKING")
+        g = QGridLayout(grp)
+        g.setSpacing(8)
+        g.setContentsMargins(12, 12, 12, 12)
+
+        self.chunk_duration_sec = QDoubleSpinBox()
+        self.chunk_duration_sec.setRange(1.0, 60.0)
+        self.chunk_duration_sec.setSingleStep(0.5)
+        self.chunk_duration_sec.setDecimals(1)
+        self.chunk_duration_sec.setSuffix(" s")
+        g.addWidget(_lbl("Chunk Duration:", restart=True), 0, 0)
+        g.addWidget(self.chunk_duration_sec, 0, 1)
+
+        self.chunk_overlap_sec = QDoubleSpinBox()
+        self.chunk_overlap_sec.setRange(0.0, 10.0)
+        self.chunk_overlap_sec.setSingleStep(0.25)
+        self.chunk_overlap_sec.setDecimals(2)
+        self.chunk_overlap_sec.setSuffix(" s")
+        g.addWidget(_lbl("Chunk Overlap:", restart=True), 1, 0)
+        g.addWidget(self.chunk_overlap_sec, 1, 1)
+
+        self.keep_audio_files = QCheckBox("Keep WAV chunk files on drone")
+        g.addWidget(_lbl("Keep Audio:"), 2, 0)
+        g.addWidget(self.keep_audio_files, 2, 1)
+
+        return grp
+
     def _group_output_files(self):
         grp = QGroupBox("🔒 SERIAL & OUTPUT FILES")
         g = QGridLayout(grp)
@@ -444,6 +477,9 @@ class RaspiConfigPanel(QWidget):
         self.frame_length.setValue(c.get("frame_length", 1024))
         self.post_recording_delay.setValue(c.get("post_recording_delay", 0.5))
         self.main_loop_delay.setValue(c.get("main_loop_delay", 0.1))
+        self.chunk_duration_sec.setValue(c.get("chunk_duration_sec", 5.0))
+        self.chunk_overlap_sec.setValue(c.get("chunk_overlap_sec", 1.0))
+        self.keep_audio_files.setChecked(c.get("keep_audio_files", True))
 
         # Update filter panel
         method = c.get("filter_method", "spectral_gating")
@@ -480,6 +516,9 @@ class RaspiConfigPanel(QWidget):
             "frame_length": self.frame_length.value(),
             "post_recording_delay": self.post_recording_delay.value(),
             "main_loop_delay": self.main_loop_delay.value(),
+            "chunk_duration_sec": self.chunk_duration_sec.value(),
+            "chunk_overlap_sec": self.chunk_overlap_sec.value(),
+            "keep_audio_files": self.keep_audio_files.isChecked(),
         }
         # Tambahkan filter payload dari FilterConfigPanel
         if hasattr(self, 'filter_panel'):
@@ -502,6 +541,8 @@ class RaspiConfigPanel(QWidget):
             return "max_gap must be > 0"
         if cfg["num_mics_h8"] not in (4, 6):
             return "num_mics_h8 must be 4 or 6"
+        if cfg["chunk_duration_sec"] <= cfg["chunk_overlap_sec"]:
+            return "chunk_duration_sec must be > chunk_overlap_sec"
         return None
 
     def _save(self):
