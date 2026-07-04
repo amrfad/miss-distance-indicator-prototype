@@ -82,7 +82,12 @@ def _load_custom_filters():
     alias yang mungkin digunakan sebelum load module custom.
     """
     registry_dir = os.path.dirname(os.path.abspath(__file__))
-    custom_dir = os.path.join(registry_dir, "custom_filters")
+    if getattr(sys, 'frozen', False):
+        # Berjalan sebagai file biner PyInstaller, cari custom_filters di sebelah exe
+        custom_dir = os.path.join(os.path.dirname(sys.executable), "custom_filters")
+    else:
+        # Berjalan di Python biasa
+        custom_dir = os.path.join(registry_dir, "custom_filters")
 
     if not os.path.isdir(custom_dir):
         return

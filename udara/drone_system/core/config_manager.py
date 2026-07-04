@@ -645,7 +645,11 @@ def get_global_config_manager() -> ConfigManager:
         if _GLOBAL_MANAGER is None:
             # Setup default path
             import os
-            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            import sys
+            if getattr(sys, 'frozen', False):
+                base_dir = os.path.dirname(sys.executable)
+            else:
+                base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             config_dir = os.path.join(base_dir, "config")
             os.makedirs(config_dir, exist_ok=True)
             store = JsonFileStore(os.path.join(config_dir, "drone_config_override.json"))
