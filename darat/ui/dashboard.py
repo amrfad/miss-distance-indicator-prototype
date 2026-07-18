@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QStackedWidget, QFrame, QLabel, QPushButton,
     QButtonGroup, QSplitter,
 )
-from PySide6.QtCore import Qt, QTimer, Slot
+from PySide6.QtCore import Qt, QTimer, Slot, Signal
 
 from ..io.serial_manager import SerialManager
 from ..core.file_transfer import FileTransferManager
@@ -27,6 +27,8 @@ from .widgets.log_panel import LogPanel
 
 class MainDashboard(QMainWindow):
     """Main application window with collapsible sidebar navigation."""
+
+    log_signal = Signal(str, str)  # (message, level)
 
     _PAGE_CONFIG = 0
     _PAGE_COMMAND = 1
@@ -59,7 +61,7 @@ class MainDashboard(QMainWindow):
 
         self._ft_log_msgs: list[str] = []
         self._file_transfer = FileTransferManager(
-            log_callback=lambda msg: self._ft_log_msgs.append(msg),
+            log_callback=self._handle_file_transfer_log,
             save_directory=self._drone_save_dir,
         )
         self._json_receiver = None
@@ -216,7 +218,7 @@ class MainDashboard(QMainWindow):
         self._json_receiver = JsonReceiver(
             serial_manager=self._serial_bridge.manager,
             file_transfer=self._file_transfer,
-            log_callback=lambda msg: self._log.log(msg, "INFO") if hasattr(self, '_log') else None,
+            log_callback=lambda msg: self.log_signal.emit(msg, "INFO"),
             save_directory=self._drone_save_dir,
         )
         self._serial_bridge.message_received.connect(
@@ -247,6 +249,8 @@ class MainDashboard(QMainWindow):
         layout.addWidget(content_splitter, stretch=1)
 
         # Wire signals
+        self.log_signal.connect(self._log.log)
+
         for page in (self._page_config, self._page_command,
                      self._page_process, self._page_visualize):
             if hasattr(page, "log_message"):
@@ -394,6 +398,20 @@ class MainDashboard(QMainWindow):
     def closeEvent(self, event):
         self._serial_bridge.disconnect()
         event.accept()
+
+    def _handle_file_transfer_log(self, msg: str):
+        """Salurkan log file transfer secara thread-safe ke main log dan serial bridge."""
+        if not msg:
+            return
+        # 1. Simpan ke telemetry buffer
+        self._ft_log_msgs.append(msg)
+        # 2. Tampilkan di log console utama secara thread-safe
+        self.log_signal.emit(msg, "INFO")
+        # 3. Teruskan ke serial bridge message_received agar CommandPage dapat menangkap respons STATUS/INFO
+        clean_msg = msg
+        if msg.startswith("Received: "):
+            clean_msg = msg[len("Received: "):]
+        self._serial_bridge.message_received.emit(clean_msg)
 
     def get_logger(self):
         return self._log.log

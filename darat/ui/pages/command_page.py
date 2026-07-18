@@ -17,6 +17,7 @@ class CommandPage(QWidget):
     """Command tab: Connect, Disconnect, Start/Stop Rec, Status, Process Data."""
 
     log_message = Signal(str, str)  # (message, level)
+    json_saved  = Signal(str)       # (file_path)
 
     def __init__(self, serial_bridge, file_transfer, json_receiver,
                  log_callback=None, navigate_callback=None, parent=None):
@@ -40,6 +41,9 @@ class CommandPage(QWidget):
 
         # Hubungkan sinyal dari serial_bridge untuk menangkap balasan STATUS
         self._serial.message_received.connect(self._on_serial_message)
+
+        # Hubungkan signal internal untuk memproses hasil JSON secara thread-safe
+        self.json_saved.connect(self._on_json_saved_gui)
 
     def _log(self, msg, level="INFO"):
         if self._log_callback:
@@ -203,8 +207,13 @@ class CommandPage(QWidget):
     def _on_serial_message(self, msg: str):
         """Tangkap balasan dari drone, khusus untuk STATUS."""
         # Asumsikan drone membalas dengan teks seperti "MIC=OK, SDR=OK, ..."
-        # atau bisa juga "STATUS: ..."
-        if msg and ("MIC" in msg.upper() or "SDR" in msg.upper() or "ZOOM" in msg.upper()):
+        # atau bisa juga "STATUS: ...", "OK:...", "ERROR:...", "IDLE", "RECORDING"
+        if not msg:
+            return
+
+        msg_upper = msg.upper()
+        keywords = ["MIC", "SDR", "ZOOM", "OK:", "ERROR:", "IDLE", "RECORDING", "STATUS:"]
+        if any(kw in msg_upper for kw in keywords):
             # Tampilkan di panel status response
             self.status_response_text.append(f"> {msg.strip()}")
             self.status_response_text.ensureCursorVisible()
@@ -264,23 +273,25 @@ class CommandPage(QWidget):
         self._last_json_file = None
         self.last_json_label.setText("—")
 
-        def _on_json_saved(filename: str):
-            self._last_json_file = filename
-            self.last_json_label.setText(os.path.basename(filename))
-            self._log(f"JSON received: {filename}", "INFO")
-            self._update_ui_state()
-            if hasattr(parent, '_on_json_received'):
-                parent._on_json_received(filename)
-
         self._rx_thread = threading.Thread(
             target=self._jr.receive_json,
-            kwargs={"on_saved": _on_json_saved, "continuous": True},
+            kwargs={"on_saved": self.json_saved.emit, "continuous": True},
             daemon=True,
             name="JsonReceiver-Continuous",
         )
         self._rx_thread.start()
         self._log("Continuous JSON receiver started", "DEBUG")
         self._update_ui_state()
+
+    def _on_json_saved_gui(self, filename: str):
+        """Dipanggil di thread GUI saat file JSON berhasil disimpan."""
+        parent = self.window()
+        self._last_json_file = filename
+        self.last_json_label.setText(os.path.basename(filename))
+        self._log(f"JSON received: {filename}", "INFO")
+        self._update_ui_state()
+        if hasattr(parent, '_on_json_received'):
+            parent._on_json_received(filename)
 
     def _on_stop_record(self):
         if not self._is_recording:
