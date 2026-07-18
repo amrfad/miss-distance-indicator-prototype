@@ -48,10 +48,19 @@ class MainDashboard(QMainWindow):
             drone_port=int(cfg.get("drone_port", 5000)),
             parent=self
         )
+
+        # Direktori penyimpanan file yang diterima dari drone
+        # → Prototype/drone_recordings/ (relatif terhadap root project)
+        _project_root = os.path.realpath(
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+        )
+        self._drone_save_dir = os.path.join(_project_root, "drone_recordings")
+        os.makedirs(self._drone_save_dir, exist_ok=True)
+
         self._ft_log_msgs: list[str] = []
         self._file_transfer = FileTransferManager(
             log_callback=lambda msg: self._ft_log_msgs.append(msg),
-            save_directory=os.getcwd(),
+            save_directory=self._drone_save_dir,
         )
         self._json_receiver = None
 
@@ -208,6 +217,7 @@ class MainDashboard(QMainWindow):
             serial_manager=self._serial_bridge.manager,
             file_transfer=self._file_transfer,
             log_callback=lambda msg: self._log.log(msg, "INFO") if hasattr(self, '_log') else None,
+            save_directory=self._drone_save_dir,
         )
         self._serial_bridge.message_received.connect(
             lambda msg: self._log.log(msg, "DEBUG") if hasattr(self, '_log') else None

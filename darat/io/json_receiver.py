@@ -374,7 +374,7 @@ class JsonReceiver:
                                 self._log(f"  Time: {elapsed:.2f} seconds")
 
                                 if on_saved:
-                                    on_saved(filename)
+                                    on_saved(file_path)  # path absolut agar caller bisa os.path.exists()
 
                                 return True
 
@@ -407,10 +407,11 @@ class JsonReceiver:
     # ------------------------------------------------------------------
 
     def _save_debug_file(self, json_data: bytes, buffer: bytes | None, end_idx: int | None):
-        """Simpan raw data ke file debug untuk analisis."""
+        """Simpan raw data ke file debug untuk analisis (disimpan di save_directory)."""
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        debug_file = f"debug_json_{ts}.txt"
+        debug_file = os.path.join(self.save_directory, f"debug_json_{ts}.txt")
         try:
+            os.makedirs(self.save_directory, exist_ok=True)
             with open(debug_file, "wb") as f:
                 f.write(json_data)
             self._log(f"Raw data saved to: {debug_file}")
@@ -422,7 +423,7 @@ class JsonReceiver:
             self._log(
                 f"[DEBUG] Data after [END] ({len(after_end)} bytes): {repr(after_end[:200])}"
             )
-            buffer_file = f"debug_buffer_{ts}.txt"
+            buffer_file = os.path.join(self.save_directory, f"debug_buffer_{ts}.txt")
             try:
                 with open(buffer_file, "wb") as f:
                     f.write(buffer)

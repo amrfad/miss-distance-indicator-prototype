@@ -287,12 +287,25 @@ class CommandPage(QWidget):
             self._log("Not recording", "WARNING")
             return
 
-        self._jr.stop_continuous()
+        # 1. Kirim STOP_REC ke drone TERLEBIH DAHULU
+        #    supaya drone selesai memproses + mengirim chunk terakhir
         parent = self.window()
         if hasattr(parent, '_do_stop_record_command'):
             parent._do_stop_record_command()
+
+        # 2. Disable tombol agar tidak double-click selama draining
+        self.stop_rec_btn.setEnabled(False)
+        self._log("STOP_REC dikirim — menunggu transmisi terakhir dari drone (10 detik)...", "INFO")
+
+        # 3. Beri grace period 10 detik sebelum hentikan receiver.
+        #    Ini agar JSON chunk terakhir yang dikirim drone sempat diterima.
+        QTimer.singleShot(10000, self._finalize_stop_record)
+
+    def _finalize_stop_record(self):
+        """Dipanggil setelah grace period — hentikan receiver dan update UI."""
+        self._jr.stop_continuous()
         self._is_recording = False
-        self._log("Recording stopped", "INFO")
+        self._log("Recording stopped (receiver selesai draining)", "INFO")
         self._update_ui_state()
 
     def _on_process_data(self):

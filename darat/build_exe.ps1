@@ -66,6 +66,7 @@ pyinstaller --noconfirm `
     --hidden-import="darat.localization.builtin_ssl.chan_ho" `
     --hidden-import="darat.localization.builtin_ssl.pivot" `
     --hidden-import="darat.localization.builtin_ssl.consensus" `
+    --hidden-import="darat.localization.builtin_ssl.density_consensus" `
     --add-data "darat/ui/styles/mdi_theme.qss;darat/ui/styles" `
     @AddBinaryArgs `
     darat/main.py

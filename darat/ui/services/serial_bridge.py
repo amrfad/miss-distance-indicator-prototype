@@ -99,7 +99,9 @@ class SerialBridge(QObject):
 
     def send_command(self, command: str) -> bool:
         """Send a plain text command (e.g. 'START_REC') to the drone."""
-        result = self._manager.send_command(command)
+        # Tambahkan newline agar readline() di drone langsung merespon seketika tanpa timeout
+        cmd_to_send = f"{command}\n" if not command.endswith("\n") else command
+        result = self._manager.send_command(cmd_to_send)
         if result:
             self.command_sent.emit(command)
         return result
