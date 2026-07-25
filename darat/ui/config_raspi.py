@@ -1,9 +1,9 @@
 # darat/ui/config_raspi.py
-"""Raspberry Pi configuration panel — Multi-column layout (2 columns)."""
+"""Raspberry Pi configuration panel — grouped into sub-tabs by function."""
 
 from PySide6.QtWidgets import (
     QWidget, QGroupBox, QGridLayout, QVBoxLayout,
-    QHBoxLayout, QLineEdit, QComboBox,
+    QHBoxLayout, QLineEdit, QComboBox, QTabWidget,
     QSpinBox, QDoubleSpinBox, QPushButton,
     QCheckBox, QMessageBox, QLabel,
     QScrollArea, QFrame,
@@ -13,7 +13,6 @@ from PySide6.QtCore import Signal, Qt
 from .widgets.filter_config_panel import FilterConfigPanel
 
 _LABEL_W = 140
-_COLUMN_SPACING = 20
 
 _RESTART_REQUIRED = {
     "operation_mode", "serial_port", "baud_rate", "serial_timeout", "arecord_device",
@@ -25,20 +24,33 @@ _RESTART_REQUIRED = {
 
 
 def _lbl(text: str, restart: bool = False, tooltip: str = "") -> QLabel:
-    display = f"{text} ⚠" if restart else text
-    lbl = QLabel(display)
+    """Label field. `restart=True` menandai field yang butuh restart drone —
+    ditandai lewat warna teks + garis aksen kiri, bukan ikon."""
+    lbl = QLabel(text)
     lbl.setFixedWidth(_LABEL_W)
     lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
     if restart:
-        lbl.setToolTip("⚠ Requires drone restart to take effect")
-        lbl.setStyleSheet("color: #d97706;")
+        lbl.setObjectName("labelRestart")
+        lbl.setToolTip("Requires drone restart to take effect")
     if tooltip:
         lbl.setToolTip(tooltip)
     return lbl
 
 
+def _tab_container(*groups: QWidget) -> QWidget:
+    """Bungkus satu atau beberapa group box ke dalam satu halaman sub-tab."""
+    page = QWidget()
+    layout = QVBoxLayout(page)
+    layout.setContentsMargins(4, 8, 4, 4)
+    layout.setSpacing(10)
+    for grp in groups:
+        layout.addWidget(grp)
+    layout.addStretch()
+    return page
+
+
 class RaspiConfigPanel(QWidget):
-    """Configuration panel for the Drone (Raspberry Pi) — 2 column layout."""
+    """Configuration panel for the Drone (Raspberry Pi) — sub-tab layout."""
 
     config_save_requested = Signal(dict)
     config_reset_requested = Signal()
@@ -100,47 +112,36 @@ class RaspiConfigPanel(QWidget):
         outer.setContentsMargins(8, 8, 8, 8)
         outer.setSpacing(10)
 
-        # Restart banner
+        # Restart banner (accent border sudah menyampaikan urgensi, tanpa ikon)
         self._restart_banner = self._build_restart_banner()
         outer.addWidget(self._restart_banner)
 
-        # Legend
-        legend = QLabel(
-            "⚠ = Requires restart  ·  "
-            "<span style='color:#16a34a'>🔄 Runtime (live)</span>"
+        # === SUB-TABS: kelompokkan 8 group box lama jadi 5 kategori ===
+        tabs = QTabWidget()
+        tabs.addTab(
+            _tab_container(self._group_operation(), self._group_output_files()),
+            "General",
         )
-        legend.setTextFormat(Qt.TextFormat.RichText)
-        legend.setStyleSheet("font-size:10px; color:#64748b; padding:2px 4px;")
-        outer.addWidget(legend)
+        tabs.addTab(
+            _tab_container(self._group_audio(), self._group_streaming()),
+            "Audio",
+        )
+        tabs.addTab(
+            _tab_container(self._group_tdoa(), self._group_detection()),
+            "Detection",
+        )
+        tabs.addTab(
+            _tab_container(self._group_filter_method()),
+            "Filter",
+        )
+        tabs.addTab(
+            _tab_container(self._group_timing()),
+            "Timing",
+        )
+        self._tabs = tabs
+        outer.addWidget(tabs, stretch=1)
 
-        # === 2 COLUMN LAYOUT ===
-        columns_layout = QHBoxLayout()
-        columns_layout.setSpacing(_COLUMN_SPACING)
-
-        # Column 1
-        col1 = QVBoxLayout()
-        col1.setSpacing(10)
-        col1.addWidget(self._group_operation())
-        col1.addWidget(self._group_audio())
-        col1.addWidget(self._group_tdoa())
-        col1.addWidget(self._group_output_files())
-        col1.addStretch()
-
-        # Column 2
-        col2 = QVBoxLayout()
-        col2.setSpacing(10)
-        col2.addWidget(self._group_detection())
-        col2.addWidget(self._group_filter_method())
-        col2.addWidget(self._group_timing())
-        col2.addWidget(self._group_streaming())
-        col2.addStretch()
-
-        columns_layout.addLayout(col1, stretch=1)
-        columns_layout.addLayout(col2, stretch=1)
-
-        outer.addLayout(columns_layout)
         outer.addLayout(self._action_buttons())
-        outer.addStretch()
 
         scroll.setWidget(inner)
         root = QVBoxLayout(self)
@@ -155,10 +156,6 @@ class RaspiConfigPanel(QWidget):
         )
         layout = QHBoxLayout(banner)
         layout.setContentsMargins(12, 8, 12, 8)
-
-        icon = QLabel("⚠")
-        icon.setStyleSheet("font-size:16px; color:#d97706;")
-        layout.addWidget(icon)
 
         self._restart_msg = QLabel("Some parameters require a drone restart to take effect.")
         self._restart_msg.setStyleSheet("color:#9a3412; font-size:11px;")
@@ -175,7 +172,7 @@ class RaspiConfigPanel(QWidget):
         return banner
 
     def _group_operation(self):
-        grp = QGroupBox("🔒 OPERATION MODE")
+        grp = QGroupBox("OPERATION MODE")
         g = QGridLayout(grp)
         g.setSpacing(8)
         g.setContentsMargins(12, 12, 12, 12)
@@ -198,7 +195,7 @@ class RaspiConfigPanel(QWidget):
         return grp
 
     def _group_audio(self):
-        grp = QGroupBox("🔒 AUDIO CONFIGURATION")
+        grp = QGroupBox("AUDIO CONFIGURATION")
         g = QGridLayout(grp)
         g.setSpacing(8)
         g.setContentsMargins(12, 12, 12, 12)
@@ -229,7 +226,7 @@ class RaspiConfigPanel(QWidget):
         return grp
 
     def _group_detection(self):
-        grp = QGroupBox("🔄 EVENT DETECTION")
+        grp = QGroupBox("EVENT DETECTION")
         g = QGridLayout(grp)
         g.setSpacing(8)
         g.setContentsMargins(12, 12, 12, 12)
@@ -275,12 +272,11 @@ class RaspiConfigPanel(QWidget):
         return grp
 
     def _group_filter_method(self):
-        grp = QGroupBox("🔄 FILTER METHOD")
+        grp = QGroupBox("FILTER METHOD")
         g = QVBoxLayout(grp)
         g.setSpacing(8)
         g.setContentsMargins(12, 12, 12, 12)
 
-        # Keterangan singkat
         info = QLabel(
             "Pilih metode noise reduction. Parameter diadaptasi secara dinamis "
             "dari skema yang dikirim drone via API."
@@ -309,7 +305,7 @@ class RaspiConfigPanel(QWidget):
             self.filter_panel.update_schemas(schemas)
 
     def _group_tdoa(self):
-        grp = QGroupBox("🔒 TDOA / GCC-PHAT")
+        grp = QGroupBox("TDOA / GCC-PHAT")
         g = QGridLayout(grp)
         g.setSpacing(8)
         g.setContentsMargins(12, 12, 12, 12)
@@ -333,7 +329,7 @@ class RaspiConfigPanel(QWidget):
         return grp
 
     def _group_timing(self):
-        grp = QGroupBox("🔄 TIMING / DELAYS")
+        grp = QGroupBox("TIMING / DELAYS")
         g = QGridLayout(grp)
         g.setSpacing(8)
         g.setContentsMargins(12, 12, 12, 12)
@@ -365,7 +361,7 @@ class RaspiConfigPanel(QWidget):
         return grp
 
     def _group_streaming(self):
-        grp = QGroupBox("🔒 STREAMING & CHUNKING")
+        grp = QGroupBox("STREAMING & CHUNKING")
         g = QGridLayout(grp)
         g.setSpacing(8)
         g.setContentsMargins(12, 12, 12, 12)
@@ -393,7 +389,7 @@ class RaspiConfigPanel(QWidget):
         return grp
 
     def _group_output_files(self):
-        grp = QGroupBox("🔒 SERIAL & OUTPUT FILES")
+        grp = QGroupBox("SERIAL & OUTPUT FILES")
         g = QGridLayout(grp)
         g.setSpacing(8)
         g.setContentsMargins(12, 12, 12, 12)
@@ -434,12 +430,12 @@ class RaspiConfigPanel(QWidget):
     def _action_buttons(self):
         row = QHBoxLayout()
         row.setSpacing(8)
-        save_btn = QPushButton("💾 SAVE CONFIG")
+        save_btn = QPushButton("SAVE CONFIG")
         save_btn.setObjectName("btnSave")
         save_btn.clicked.connect(self._save)
         row.addWidget(save_btn)
 
-        reset_btn = QPushButton("↺ RESET DEFAULTS")
+        reset_btn = QPushButton("RESET DEFAULTS")
         reset_btn.setObjectName("btnReset")
         reset_btn.clicked.connect(self._reset)
         row.addWidget(reset_btn)
@@ -481,7 +477,6 @@ class RaspiConfigPanel(QWidget):
         self.chunk_overlap_sec.setValue(c.get("chunk_overlap_sec", 1.0))
         self.keep_audio_files.setChecked(c.get("keep_audio_files", True))
 
-        # Update filter panel
         method = c.get("filter_method", "spectral_gating")
         filter_configs = c.get("filter_configs", {})
         method_params = filter_configs.get(method, {}) if isinstance(filter_configs, dict) else {}
@@ -520,7 +515,6 @@ class RaspiConfigPanel(QWidget):
             "chunk_overlap_sec": self.chunk_overlap_sec.value(),
             "keep_audio_files": self.keep_audio_files.isChecked(),
         }
-        # Tambahkan filter payload dari FilterConfigPanel
         if hasattr(self, 'filter_panel'):
             filter_payload = self.filter_panel.get_filter_config_payload()
             base.update(filter_payload)
@@ -555,7 +549,7 @@ class RaspiConfigPanel(QWidget):
         if cfg.get("baud_rate") != self.current_config.get("baud_rate"):
             QMessageBox.warning(
                 self, "Baud Rate Changed",
-                "⚠ baud_rate changed on drone.\nMake sure Ground Station baud_rate matches!"
+                "baud_rate changed on drone.\nMake sure Ground Station baud_rate matches!"
             )
 
         restart_params = [
@@ -570,7 +564,7 @@ class RaspiConfigPanel(QWidget):
             names = ", ".join(restart_params[:3])
             if len(restart_params) > 3:
                 names += f" +{len(restart_params)-3} more"
-            self._restart_msg.setText(f"⚠ Restart required: {names}")
+            self._restart_msg.setText(f"Restart required: {names}")
             self._restart_banner.setVisible(True)
         else:
             self._restart_banner.setVisible(False)

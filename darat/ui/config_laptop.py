@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QWidget, QGroupBox, QFormLayout, QVBoxLayout, QHBoxLayout,
     QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPushButton,
     QCheckBox, QMessageBox, QLabel, QGridLayout, QScrollArea, QFrame,
+    QTabWidget,
 )
 from PySide6.QtCore import Signal, Qt
 
@@ -21,8 +22,20 @@ _DEFAULT_MIC_POSITIONS = {
 }
 
 
+def _tab_container(*widgets: QWidget) -> QWidget:
+    """Bungkus satu atau beberapa widget ke dalam satu halaman sub-tab."""
+    page = QWidget()
+    layout = QVBoxLayout(page)
+    layout.setContentsMargins(4, 8, 4, 4)
+    layout.setSpacing(10)
+    for w in widgets:
+        layout.addWidget(w)
+    layout.addStretch()
+    return page
+
+
 class LaptopConfigPanel(QWidget):
-    """Configuration panel for the Ground Station (laptop/PC) — 2 column layout."""
+    """Configuration panel for the Ground Station (laptop/PC) — sub-tab layout."""
 
     config_save_requested = Signal(dict)
     config_reset_requested = Signal()
@@ -58,33 +71,24 @@ class LaptopConfigPanel(QWidget):
         outer.setContentsMargins(8, 8, 8, 8)
         outer.setSpacing(10)
 
-        # === 2 COLUMN LAYOUT ===
-        columns_layout = QHBoxLayout()
-        columns_layout.setSpacing(20)
+        # === SUB-TABS: Connection, Processing, Microphone Positions ===
+        tabs = QTabWidget()
+        tabs.addTab(
+            _tab_container(self._group_serial(), self._group_network()),
+            "Connection",
+        )
+        tabs.addTab(
+            _tab_container(self._group_processing()),
+            "Processing",
+        )
+        tabs.addTab(
+            _tab_container(self._group_mic_positions()),
+            "Microphone Positions",
+        )
+        self._tabs = tabs
+        outer.addWidget(tabs, stretch=1)
 
-        # Column 1
-        col1 = QVBoxLayout()
-        col1.setSpacing(10)
-        col1.addWidget(self._group_serial())
-        col1.addWidget(self._group_network())
-        col1.addStretch()
-
-        # Column 2
-        col2 = QVBoxLayout()
-        col2.setSpacing(10)
-        col2.addWidget(self._group_processing())
-        col2.addStretch()
-
-        columns_layout.addLayout(col1, stretch=1)
-        columns_layout.addLayout(col2, stretch=1)
-
-        outer.addLayout(columns_layout)
-        
-        # MIC POSITIONS (full width, di bawah kedua kolom)
-        outer.addWidget(self._group_mic_positions())
-        
         outer.addLayout(self._action_buttons())
-        outer.addStretch()
 
         scroll.setWidget(inner)
         root = QVBoxLayout(self)
@@ -100,7 +104,7 @@ class LaptopConfigPanel(QWidget):
         return form
 
     def _group_serial(self):
-        grp = QGroupBox("🔌 SERIAL COMMUNICATION")
+        grp = QGroupBox("SERIAL COMMUNICATION")
         form = self._make_form(grp)
 
         self.serial_port = QLineEdit()
@@ -111,8 +115,9 @@ class LaptopConfigPanel(QWidget):
         self.baud_rate.addItems(["9600", "19200", "38400", "57600", "115200", "230400"])
         form.addRow("Baud Rate:", self.baud_rate)
 
-        baud_warn = QLabel("⚠ Must match Raspberry Pi baud rate")
-        baud_warn.setStyleSheet("color: #d97706; font-size: 10px; margin-left: 8px;")
+        baud_warn = QLabel("Must match Raspberry Pi baud rate")
+        baud_warn.setObjectName("labelRestart")
+        baud_warn.setStyleSheet("font-size: 10px; margin-left: 8px;")
         form.addRow("", baud_warn)
 
         self.serial_timeout = QDoubleSpinBox()
@@ -124,7 +129,7 @@ class LaptopConfigPanel(QWidget):
         return grp
 
     def _group_network(self):
-        grp = QGroupBox("🌐 NETWORK SETTINGS")
+        grp = QGroupBox("NETWORK SETTINGS")
         form = self._make_form(grp)
 
         self.raspi_ip = QLineEdit()
@@ -138,7 +143,7 @@ class LaptopConfigPanel(QWidget):
         return grp
 
     def _group_processing(self):
-        grp = QGroupBox("⚙ PROCESSING PARAMETERS")
+        grp = QGroupBox("PROCESSING PARAMETERS")
         form = self._make_form(grp)
 
         self.speed_of_sound = QDoubleSpinBox()
@@ -159,7 +164,7 @@ class LaptopConfigPanel(QWidget):
         return grp
 
     def _group_mic_positions(self):
-        grp = QGroupBox("🎤 MICROPHONE POSITIONS (3D coordinates in meters)")
+        grp = QGroupBox("MICROPHONE POSITIONS (3D coordinates in meters)")
         outer = QVBoxLayout(grp)
         outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(8)
@@ -185,8 +190,7 @@ class LaptopConfigPanel(QWidget):
 
         for row in range(6):
             mic_key = f"mic{row}"
-            
-            # Label mic
+
             lbl = QLabel(mic_key.upper())
             lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             lbl.setStyleSheet("font-size:11px; font-weight:bold; color:#2563eb; min-width:50px;")
@@ -205,8 +209,7 @@ class LaptopConfigPanel(QWidget):
 
         outer.addLayout(grid)
 
-        # Tombol reset mic
-        reset_mic_btn = QPushButton("↺ Reset Mic Positions to Default")
+        reset_mic_btn = QPushButton("Reset Mic Positions to Default")
         reset_mic_btn.setObjectName("btnReset")
         reset_mic_btn.setFixedHeight(30)
         reset_mic_btn.clicked.connect(self._reset_mic_positions)
@@ -217,12 +220,12 @@ class LaptopConfigPanel(QWidget):
     def _action_buttons(self):
         row = QHBoxLayout()
         row.setSpacing(8)
-        save_btn = QPushButton("💾 SAVE CONFIG")
+        save_btn = QPushButton("SAVE CONFIG")
         save_btn.setObjectName("btnSave")
         save_btn.clicked.connect(self._save)
         row.addWidget(save_btn)
 
-        reset_btn = QPushButton("↺ RESET DEFAULTS")
+        reset_btn = QPushButton("RESET DEFAULTS")
         reset_btn.setObjectName("btnReset")
         reset_btn.clicked.connect(self._reset)
         row.addWidget(reset_btn)

@@ -47,8 +47,8 @@ class ConfigPage(QWidget):
         tabs = QTabWidget()
         self.raspi_config = RaspiConfigPanel()
         self.laptop_config = LaptopConfigPanel()
-        tabs.addTab(self.raspi_config, "  🔒 RASPBERRY PI  ")
-        tabs.addTab(self.laptop_config, "  🖥 GROUND STATION  ")
+        tabs.addTab(self.raspi_config, "RASPBERRY PI")
+        tabs.addTab(self.laptop_config, "GROUND STATION")
 
         self._tabs = tabs
         root.addWidget(tabs, stretch=3)
@@ -67,7 +67,7 @@ class ConfigPage(QWidget):
         layout.setSpacing(10)
 
         # Tombol preview
-        self._preview_btn = QPushButton("👁  PREVIEW CONFIG (JSON)")
+        self._preview_btn = QPushButton("PREVIEW CONFIG (JSON)")
         self._preview_btn.setObjectName("btnSecondary")
         self._preview_btn.setFixedHeight(32)
         self._preview_btn.setCursor(Qt.CursorShape.PointingHandCursor)  # ← sekarang Qt sudah di-import
@@ -115,7 +115,7 @@ class ConfigPage(QWidget):
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
 
-        copy_btn = QPushButton("📋 COPY TO CLIPBOARD")
+        copy_btn = QPushButton("COPY TO CLIPBOARD")
         copy_btn.clicked.connect(lambda: self._copy_json_to_clipboard(cfg))
         btn_layout.addWidget(copy_btn)
 
@@ -173,7 +173,7 @@ class ConfigPage(QWidget):
     # ── Public ───────────────────────────────────────────────────────────
 
     def get_runtime_config(self) -> dict:
-        """Return only 🔄 runtime params from the Raspi panel."""
+        """Return only runtime params from the Raspi panel."""
         return self.raspi_config.get_runtime_config()
 
     # ── Slots ─────────────────────────────────────────────────────────────

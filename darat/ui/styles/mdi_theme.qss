@@ -68,6 +68,13 @@ QLabel#statusError {
     font-weight: 600;
 }
 
+QLabel#labelRestart {
+    color: #d97706;
+    font-weight: 600;
+    border-left: 3px solid #f59e0b;
+    padding-left: 6px;
+}
+
 /* ─────────────────────────────────────────────────────────────
    SIDEBAR
 ───────────────────────────────────────────────────────────── */
