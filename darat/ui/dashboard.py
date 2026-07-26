@@ -97,9 +97,6 @@ class MainDashboard(QMainWindow):
         self._main_splitter.setSizes([180, self.width() - 180])
         root.addWidget(self._main_splitter, stretch=1)
 
-        # Bottom status bar (tipis)
-        root.addWidget(self._build_bottom_bar())
-
         # Start timers
         self._clock_timer = QTimer(self)
         self._clock_timer.timeout.connect(self._tick_clock)
@@ -263,23 +260,6 @@ class MainDashboard(QMainWindow):
 
         return container
 
-    def _build_bottom_bar(self) -> QFrame:
-        bar = QFrame()
-        bar.setObjectName("bottomBar")
-        bar.setFixedHeight(28)
-        layout = QHBoxLayout(bar)
-        layout.setContentsMargins(12, 0, 12, 0)
-        layout.setSpacing(16)
-
-        self._bottom_status = QLabel("● SYSTEM READY")
-        self._bottom_status.setObjectName("statusOk")
-        layout.addWidget(self._bottom_status)
-        layout.addStretch()
-        self._bottom_datetime = QLabel()
-        self._bottom_datetime.setObjectName("statusHeading")
-        layout.addWidget(self._bottom_datetime)
-        return bar
-
     def _toggle_sidebar(self, checked: bool):
         if checked:
             self._main_splitter.setSizes([180, self._main_splitter.width() - 180])
@@ -341,13 +321,9 @@ class MainDashboard(QMainWindow):
         if connected:
             self._header_conn_dot.setObjectName("statusOk")
             self._header_conn_label.setText(f"CONNECTED  {port}")
-            self._bottom_status.setText(f"● CONNECTED  {port}")
-            self._bottom_status.setObjectName("statusOk")
         else:
             self._header_conn_dot.setObjectName("statusError")
             self._header_conn_label.setText("NOT CONNECTED")
-            self._bottom_status.setText("● NOT CONNECTED")
-            self._bottom_status.setObjectName("statusError")
         # Refresh style
         for w in (self._header_conn_dot, self._header_conn_label):
             w.style().unpolish(w)
@@ -372,8 +348,6 @@ class MainDashboard(QMainWindow):
     def _tick_clock(self):
         now = datetime.now()
         self._clock_label.setText(now.strftime("  %H:%M:%S  ·  %Y-%m-%d"))
-        if hasattr(self, "_bottom_datetime"):
-            self._bottom_datetime.setText(now.strftime("%Y-%m-%d  %H:%M:%S"))
 
     def _start_config_api(self):
         try:

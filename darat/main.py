@@ -1,11 +1,5 @@
-"""
-Miss Distance Indicator — Ground Control Station
-Entry point: python -m darat.main  (or  python darat/main.py)
-"""
-
 import sys
 import os
-from tkinter import font
 
 # Ensure project root is on path when run as script
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -46,7 +40,10 @@ def main():
     if os.path.exists(qss_path):
         try:
             with open(qss_path, "r", encoding="utf-8") as f:
-                app.setStyleSheet(f.read())
+                qss_text = f.read()
+            icons_dir = os.path.join(os.path.dirname(qss_path), "icons").replace("\\", "/")
+            qss_text = qss_text.replace('url("icons/', f'url("{icons_dir}/')
+            app.setStyleSheet(qss_text)
             print(f"[INIT] Stylesheet loaded successfully from: {qss_path}")
         except Exception as e:
             print(f"[INIT] ERROR: Gagal membaca stylesheet di {qss_path}: {e}")

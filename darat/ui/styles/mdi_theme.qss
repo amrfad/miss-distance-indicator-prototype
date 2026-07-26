@@ -1,7 +1,7 @@
 /* ============================================================
    MDI — Tactical Outdoor Ground Station Theme
-   Version: 3.0
-   Style: Modern Tactical Telemetry
+   Version: 3.1
+   Style: Modern Tactical Telemetry (High-Contrast Typography)
    ============================================================ */
 
 /* ─────────────────────────────────────────────────────────────
@@ -28,15 +28,16 @@ QWidget#rootWidget {
 ───────────────────────────────────────────────────────────── */
 
 QLabel {
-    color: #475569;
+    color: #1e293b;
     font-size: 12px;
+    font-weight: 600;
 }
 
 QLabel#sectionTitle {
     color: #172033;
     font-size: 14px;
-    font-weight: 600;
-    letter-spacing: 0.5px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
 }
 
 QLabel#statusHeading {
@@ -66,13 +67,6 @@ QLabel#statusWarn {
 QLabel#statusError {
     color: #dc2626;
     font-weight: 600;
-}
-
-QLabel#labelRestart {
-    color: #d97706;
-    font-weight: 600;
-    border-left: 3px solid #f59e0b;
-    padding-left: 6px;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -187,9 +181,9 @@ QGroupBox::title {
     padding: 0 6px;
     color: #2563eb;
     background-color: #ffffff;
-    font-size: 11px;
+    font-size: 14px;
     font-weight: 700;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.6px;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -234,11 +228,12 @@ QComboBox,
 QTextEdit,
 QPlainTextEdit {
     background-color: #ffffff;
-    border: 1px solid #cbd5e1;
+    border: 1px solid #94a3b8;
     border-radius: 6px;
     padding: 7px 10px;
     color: #172033;
-    font-size: 12px;
+    font-size: 13px;
+    font-weight: 600;
     selection-background-color: #bfdbfe;
 }
 
@@ -257,6 +252,16 @@ QTextEdit[readOnly="true"] {
     font-family: "Inter", "Segoe UI", "Roboto", sans-serif;
 }
 
+/* Font monospace KHUSUS field angka presisi (koordinat, IP, baud rate,
+   sample rate, timing, dll) — set objectName("monoField") di Python
+   pada widget yang relevan. JANGAN diterapkan ke semua input. */
+QLineEdit#monoField,
+QSpinBox#monoField,
+QDoubleSpinBox#monoField {
+    font-family: "Consolas", "Cascadia Mono", monospace;
+    font-weight: 600;
+}
+
 /* ─────────────────────────────────────────────────────────────
    COMBO BOX
 ───────────────────────────────────────────────────────────── */
@@ -267,11 +272,60 @@ QComboBox::drop-down {
     background-color: #f8fafc;
 }
 
+QComboBox::down-arrow {
+    image: url("icons/down_arrow_combo.png");
+    width: 10px;
+    height: 7px;
+    margin-right: 6px;
+}
+
 QComboBox QAbstractItemView {
     background-color: #ffffff;
     border: 1px solid #dbe4ee;
     selection-background-color: #dbeafe;
     color: #172033;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   SPIN BOX (up/down button hitbox)
+───────────────────────────────────────────────────────────── */
+
+/* Perbesar area klik tombol naik/turun supaya tidak sempit dan
+   tidak tumpang tindih dengan teks angka di sebelahnya. */
+QAbstractSpinBox::up-button,
+QAbstractSpinBox::down-button {
+    subcontrol-origin: border;
+    width: 20px;
+    background-color: #f8fafc;
+    border-left: 1px solid #dbe4ee;
+}
+
+QAbstractSpinBox::up-button {
+    subcontrol-position: top right;
+    border-top-right-radius: 5px;
+}
+
+QAbstractSpinBox::down-button {
+    subcontrol-position: bottom right;
+    border-bottom-right-radius: 5px;
+    border-top: 1px solid #dbe4ee;
+}
+
+QAbstractSpinBox::up-button:hover,
+QAbstractSpinBox::down-button:hover {
+    background-color: #e2e8f0;
+}
+
+QAbstractSpinBox::up-arrow {
+    image: url("icons/up_arrow.png");
+    width: 9px;
+    height: 6px;
+}
+
+QAbstractSpinBox::down-arrow {
+    image: url("icons/down_arrow.png");
+    width: 9px;
+    height: 6px;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -281,7 +335,7 @@ QComboBox QAbstractItemView {
 QPushButton {
     background-color: #f8fafc;
     border: 1px solid #dbe4ee;
-    border-radius: 7px;
+    border-radius: 4px;
     padding: 8px 16px;
     color: #172033;
     font-size: 11px;
@@ -354,6 +408,20 @@ QPushButton#btnReset:hover {
     background-color: #d97706;
 }
 
+/* SECONDARY */
+
+QPushButton#btnSecondary {
+    background-color: #e2e8f0;
+    border: 1px solid #cbd5e1;
+    color: #1e293b;
+}
+
+QPushButton#btnSecondary:hover {
+    background-color: #cbd5e1;
+    color: #0f172a;
+}
+
+
 /* ─────────────────────────────────────────────────────────────
    CHECKBOX
 ───────────────────────────────────────────────────────────── */
@@ -374,6 +442,7 @@ QCheckBox::indicator {
 QCheckBox::indicator:checked {
     background-color: #2563eb;
     border-color: #2563eb;
+    image: url("icons/check_mark.png");
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -395,6 +464,54 @@ QListWidget::item {
 QListWidget::item:selected {
     background-color: #dbeafe;
     color: #1d4ed8;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   CONFIG SIDEBAR (vertical tab ala Blender/Unity Properties)
+   Catatan: objectName "configSidebar" & "collapsibleHeader" ini
+   ASUMSI mengikuti penamaan yang diminta di prompt Antigravity
+   sebelumnya. Kalau implementasi Antigravity pakai objectName lain,
+   sesuaikan selector di bawah ini.
+───────────────────────────────────────────────────────────── */
+
+QListWidget#configSidebar {
+    background-color: #f8fafc;
+    border: 1px solid #dbe4ee;
+    border-radius: 4px;
+    padding: 4px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+QListWidget#configSidebar::item {
+    padding: 10px 12px;
+    border-radius: 3px;
+    color: #475569;
+}
+
+QListWidget#configSidebar::item:selected {
+    background-color: #2563eb;
+    color: #ffffff;
+}
+
+QListWidget#configSidebar::item:hover:!selected {
+    background-color: #e2e8f0;
+}
+
+QToolButton#collapsibleHeader {
+    background-color: #f1f5f9;
+    border: 1px solid #dbe4ee;
+    border-radius: 4px;
+    padding: 8px 10px;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    color: #1e293b;
+}
+
+QToolButton#collapsibleHeader:hover {
+    background-color: #e2e8f0;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -420,6 +537,27 @@ QScrollBar::handle:vertical:hover {
 QScrollBar::add-line:vertical,
 QScrollBar::sub-line:vertical {
     height: 0px;
+}
+
+QScrollBar:horizontal {
+    background-color: transparent;
+    height: 8px;
+    margin: 2px;
+}
+
+QScrollBar::handle:horizontal {
+    background-color: #94a3b8;
+    border-radius: 4px;
+    min-width: 24px;
+}
+
+QScrollBar::handle:horizontal:hover {
+    background-color: #64748b;
+}
+
+QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal {
+    width: 0px;
 }
 
 /* ─────────────────────────────────────────────────────────────

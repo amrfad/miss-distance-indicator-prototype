@@ -7,6 +7,7 @@ import threading
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QFrame, QPushButton, QLabel, QTextEdit, QMessageBox,
+    QListWidget, QListWidgetItem,
 )
 from PySide6.QtCore import Signal, Qt, QTimer
 
@@ -30,6 +31,7 @@ class CommandPage(QWidget):
         self._rx_thread: threading.Thread | None = None
         self._is_recording = False
         self._last_json_file = None
+        self._received_json_files: list[str] = []
 
         self._build_ui()
         self._update_ui_state()
@@ -73,19 +75,23 @@ class CommandPage(QWidget):
         status_layout.addStretch()
         root.addWidget(status_bar)
 
-        # ── 2. Tombol grid 2x3 ──
+        # ── Middle Section: Buttons (Left) & Status Response (Right) ──
+        middle_layout = QHBoxLayout()
+        middle_layout.setSpacing(16)
+
+        # ── 2. Tombol grid 2x4 (Left) ──
         btn_group = QFrame()
         btn_group.setObjectName("card")
         btn_layout = QGridLayout(btn_group)
         btn_layout.setContentsMargins(16, 16, 16, 16)
         btn_layout.setSpacing(12)
 
-        self.connect_btn = QPushButton("🔌 CONNECT")
+        self.connect_btn = QPushButton("CONNECT")
         self.connect_btn.setObjectName("btnConnect")
         self.connect_btn.setMinimumHeight(44)
         self.connect_btn.clicked.connect(self._on_connect)
 
-        self.disconnect_btn = QPushButton("⛌ DISCONNECT")
+        self.disconnect_btn = QPushButton("DISCONNECT")
         self.disconnect_btn.setObjectName("btnStop")
         self.disconnect_btn.setMinimumHeight(44)
         self.disconnect_btn.setEnabled(False)
@@ -103,19 +109,19 @@ class CommandPage(QWidget):
         self.stop_rec_btn.setEnabled(False)
         self.stop_rec_btn.clicked.connect(self._on_stop_record)
 
-        self.status_btn = QPushButton("🔍 STATUS")
+        self.status_btn = QPushButton("STATUS")
         self.status_btn.setObjectName("btnPrimary")
         self.status_btn.setMinimumHeight(44)
         self.status_btn.setEnabled(False)
         self.status_btn.clicked.connect(self._on_check_status)
 
-        self.process_btn = QPushButton("⚙ PROCESS DATA")
+        self.process_btn = QPushButton("PROCESS DATA")
         self.process_btn.setObjectName("btnSave")
         self.process_btn.setMinimumHeight(44)
         self.process_btn.setEnabled(False)
         self.process_btn.clicked.connect(self._on_process_data)
 
-        self.restart_drone_btn = QPushButton("🔄 RESTART DRONE")
+        self.restart_drone_btn = QPushButton("RESTART DRONE")
         self.restart_drone_btn.setObjectName("btnReset")
         self.restart_drone_btn.setMinimumHeight(44)
         self.restart_drone_btn.setEnabled(False)
@@ -130,37 +136,47 @@ class CommandPage(QWidget):
         btn_layout.addWidget(self.process_btn, 2, 1)
         btn_layout.addWidget(self.restart_drone_btn, 3, 0, 1, 2)
 
-        root.addWidget(btn_group)
+        middle_layout.addWidget(btn_group, stretch=1)
 
-        # ── 3. Panel STATUS RESPONSE ──
+        # ── 3. Panel STATUS RESPONSE (Right) ──
         resp_group = QFrame()
         resp_group.setObjectName("card")
         resp_layout = QVBoxLayout(resp_group)
         resp_layout.setContentsMargins(16, 12, 16, 12)
         resp_layout.setSpacing(8)
 
-        resp_title = QLabel("📡 STATUS RESPONSE")
+        resp_title = QLabel("STATUS RESPONSE")
         resp_title.setObjectName("statusHeading")
         resp_layout.addWidget(resp_title)
 
         self.status_response_text = QTextEdit()
         self.status_response_text.setObjectName("logConsole")
         self.status_response_text.setReadOnly(True)
-        self.status_response_text.setMaximumHeight(100)
         self.status_response_text.setPlaceholderText("Press 'STATUS' to get system health report...")
-        resp_layout.addWidget(self.status_response_text)
+        resp_layout.addWidget(self.status_response_text, stretch=1)
 
-        root.addWidget(resp_group)
+        middle_layout.addWidget(resp_group, stretch=1)
 
-        # ── 4. LAST JSON RECEIVED ──
+        root.addLayout(middle_layout)
+
+        # ── 4. LAST JSON RECEIVED (N) ──
         last_group = QFrame()
         last_group.setObjectName("card")
-        last_layout = QHBoxLayout(last_group)
+        last_layout = QVBoxLayout(last_group)
         last_layout.setContentsMargins(16, 12, 16, 12)
-        last_layout.addWidget(QLabel("📄 LAST JSON RECEIVED:"))
-        self.last_json_label = QLabel("—")
-        self.last_json_label.setObjectName("statusValue")
-        last_layout.addWidget(self.last_json_label, stretch=1)
+        last_layout.setSpacing(8)
+
+        self.last_json_header = QLabel("LAST JSON RECEIVED (0):")
+        self.last_json_header.setObjectName("statusHeading")
+        last_layout.addWidget(self.last_json_header)
+
+        self.json_list_widget = QListWidget()
+        self.json_list_widget.setObjectName("logConsole")
+        self.json_list_widget.setMinimumHeight(120)
+        self.json_list_widget.setMaximumHeight(220)
+        self.json_list_widget.itemClicked.connect(self._on_json_item_clicked)
+        last_layout.addWidget(self.json_list_widget)
+
         root.addWidget(last_group)
 
         root.addStretch()
@@ -271,7 +287,9 @@ class CommandPage(QWidget):
         self._is_recording = True
         self._jr.reset()
         self._last_json_file = None
-        self.last_json_label.setText("—")
+        self._received_json_files.clear()
+        self.json_list_widget.clear()
+        self.last_json_header.setText("LAST JSON RECEIVED (0):")
 
         self._rx_thread = threading.Thread(
             target=self._jr.receive_json,
@@ -287,11 +305,30 @@ class CommandPage(QWidget):
         """Dipanggil di thread GUI saat file JSON berhasil disimpan."""
         parent = self.window()
         self._last_json_file = filename
-        self.last_json_label.setText(os.path.basename(filename))
-        self._log(f"JSON received: {filename}", "INFO")
+
+        if filename not in self._received_json_files:
+            self._received_json_files.append(filename)
+
+        basename = os.path.basename(filename)
+        item = QListWidgetItem(f"📄  {basename}")
+        item.setData(Qt.ItemDataRole.UserRole, filename)
+        self.json_list_widget.addItem(item)
+        self.json_list_widget.scrollToBottom()
+
+        count = len(self._received_json_files)
+        self.last_json_header.setText(f"LAST JSON RECEIVED ({count}):")
+
+        self._log(f"JSON received ({count}): {basename}", "INFO")
         self._update_ui_state()
         if hasattr(parent, '_on_json_received'):
             parent._on_json_received(filename)
+
+    def _on_json_item_clicked(self, item: QListWidgetItem):
+        filename = item.data(Qt.ItemDataRole.UserRole)
+        if filename and os.path.exists(filename):
+            self._last_json_file = filename
+            self._log(f"Selected JSON for processing: {os.path.basename(filename)}", "INFO")
+            self._update_ui_state()
 
     def _on_stop_record(self):
         if not self._is_recording:

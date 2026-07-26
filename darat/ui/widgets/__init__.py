@@ -4,5 +4,7 @@ from .log_panel import LogPanel
 from .radar_widget import RadarWidget
 from .tactical_3d_widget import Tactical3DWidget
 from .filter_config_panel import FilterConfigPanel
+from .collapsible_section import CollapsibleSection
 
-__all__ = ["LogPanel", "RadarWidget", "Tactical3DWidget", "FilterConfigPanel"]
+__all__ = ["LogPanel", "RadarWidget", "Tactical3DWidget", "FilterConfigPanel", "CollapsibleSection"]
+
