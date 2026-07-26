@@ -109,14 +109,6 @@ class RaspiConfigPanel(QWidget):
         self._restart_banner = self._build_restart_banner()
         root.addWidget(self._restart_banner)
 
-        # 2. Legend
-        legend = QLabel(
-            "Arahkan kursor ke nama field untuk tahu apakah field itu butuh restart drone."
-        )
-        legend.setObjectName("statusHeading")
-        legend.setStyleSheet("padding: 2px 8px;")
-        root.addWidget(legend)
-
         # 3. Main body with QScrollArea wrapping vertical sidebar + stacked widget
         scroll = QScrollArea(self)
         scroll.setWidgetResizable(True)

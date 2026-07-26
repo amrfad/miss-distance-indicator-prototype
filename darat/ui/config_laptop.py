@@ -4,6 +4,8 @@
 Acts purely as a UI view. Reads and writes are handled via signals and REST API.
 """
 
+import serial
+import serial.tools.list_ports
 from PySide6.QtWidgets import (
     QWidget, QFormLayout, QVBoxLayout, QHBoxLayout,
     QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPushButton,
@@ -109,10 +111,26 @@ class LaptopConfigPanel(QWidget):
     def _group_serial(self) -> CollapsibleSection:
         sec = CollapsibleSection("SERIAL COMMUNICATION")
 
-        self.serial_port = QLineEdit()
+        port_container = QWidget()
+        port_layout = QHBoxLayout(port_container)
+        port_layout.setContentsMargins(0, 0, 0, 0)
+        port_layout.setSpacing(6)
+
+        self.serial_port = QComboBox()
         self.serial_port.setObjectName("monoField")
-        self.serial_port.setPlaceholderText("COM3  or  /dev/ttyUSB0")
-        sec.add_row("Serial Port:", self.serial_port)
+        self.serial_port.setEditable(True)
+        self.serial_port.setToolTip("Select detected COM port or type custom port (e.g. COM3, /dev/ttyUSB0)")
+
+        self.btn_refresh_ports = QPushButton("Detect Ports")
+        self.btn_refresh_ports.setObjectName("btnSecondary")
+        self.btn_refresh_ports.setFixedHeight(28)
+        self.btn_refresh_ports.setToolTip("Scan available serial COM ports on laptop")
+        self.btn_refresh_ports.clicked.connect(self.refresh_serial_ports)
+
+        port_layout.addWidget(self.serial_port, stretch=1)
+        port_layout.addWidget(self.btn_refresh_ports, stretch=0)
+
+        sec.add_row("Serial Port:", port_container)
 
         self.baud_rate = QComboBox()
         self.baud_rate.setObjectName("monoField")
@@ -247,6 +265,64 @@ class LaptopConfigPanel(QWidget):
         row.addStretch()
         return row
 
+    # ── Serial Port Detection ─────────────────────────────────────────────
+
+    def refresh_serial_ports(self):
+        """Re-scan available COM ports on laptop and refresh dropdown choices."""
+        current_val = self._get_serial_port_value()
+        self._update_serial_port_selection(current_val)
+
+    def _update_serial_port_selection(self, target_port: str = ""):
+        self.serial_port.blockSignals(True)
+        self.serial_port.clear()
+
+        try:
+            ports = serial.tools.list_ports.comports()
+        except Exception:
+            ports = []
+
+        found = False
+        for p in ports:
+            dev = p.device
+            desc = p.description
+            display_name = f"{dev} ({desc})" if desc and desc != dev and desc.lower() != "n/a" else dev
+            self.serial_port.addItem(display_name, dev)
+            if dev == target_port or display_name == target_port:
+                found = True
+
+        if target_port and not found:
+            self.serial_port.addItem(target_port, target_port)
+
+        idx = self.serial_port.findData(target_port)
+        if idx < 0:
+            idx = self.serial_port.findText(target_port)
+
+        if idx >= 0:
+            self.serial_port.setCurrentIndex(idx)
+        elif target_port:
+            self.serial_port.setCurrentText(target_port)
+        elif self.serial_port.count() > 0:
+            self.serial_port.setCurrentIndex(0)
+        else:
+            self.serial_port.addItem("COM3", "COM3")
+            self.serial_port.setCurrentText("COM3")
+
+        self.serial_port.blockSignals(False)
+
+    def _get_serial_port_value(self) -> str:
+        if not hasattr(self, "serial_port"):
+            return "COM3"
+        text = self.serial_port.currentText().strip()
+        idx = self.serial_port.currentIndex()
+        if idx >= 0:
+            item_text = self.serial_port.itemText(idx)
+            item_data = self.serial_port.itemData(idx)
+            if item_text == text and item_data:
+                return str(item_data)
+        if " (" in text:
+            return text.split(" (")[0].strip()
+        return text
+
     # ── Data methods ──────────────────────────────────────────────────────
 
     def set_config(self, cfg: dict):
@@ -258,7 +334,7 @@ class LaptopConfigPanel(QWidget):
         self.current_config = merged
         c = self.current_config
 
-        self.serial_port.setText(c.get("serial_port", "COM3"))
+        self._update_serial_port_selection(c.get("serial_port", "COM3"))
         self.baud_rate.setCurrentText(str(c.get("baud_rate", 230400)))
         self.serial_timeout.setValue(c.get("serial_timeout", 1.0))
         self.raspi_ip.setText(c.get("raspi_ip", "10.99.99.2"))
@@ -276,7 +352,7 @@ class LaptopConfigPanel(QWidget):
 
     def _get_values_from_ui(self) -> dict:
         return {
-            "serial_port": self.serial_port.text(),
+            "serial_port": self._get_serial_port_value(),
             "baud_rate": int(self.baud_rate.currentText()),
             "serial_timeout": self.serial_timeout.value(),
             "raspi_ip": self.raspi_ip.text(),
