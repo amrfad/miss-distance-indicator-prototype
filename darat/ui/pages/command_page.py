@@ -3,6 +3,7 @@
 
 import os
 import threading
+from datetime import datetime
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
@@ -307,18 +308,19 @@ class CommandPage(QWidget):
         self._last_json_file = filename
 
         if filename not in self._received_json_files:
-            self._received_json_files.append(filename)
+            self._received_json_files.insert(0, filename)
 
         basename = os.path.basename(filename)
-        item = QListWidgetItem(f"📄  {basename}")
+        timestamp_str = datetime.now().strftime("%H:%M:%S")
+        item = QListWidgetItem(f"📄  [{timestamp_str}]  {basename}")
         item.setData(Qt.ItemDataRole.UserRole, filename)
-        self.json_list_widget.addItem(item)
-        self.json_list_widget.scrollToBottom()
+        self.json_list_widget.insertItem(0, item)
+        self.json_list_widget.scrollToTop()
 
         count = len(self._received_json_files)
         self.last_json_header.setText(f"LAST JSON RECEIVED ({count}):")
 
-        self._log(f"JSON received ({count}): {basename}", "INFO")
+        self._log(f"JSON received ({count}): {basename} at {timestamp_str}", "INFO")
         self._update_ui_state()
         if hasattr(parent, '_on_json_received'):
             parent._on_json_received(filename)
