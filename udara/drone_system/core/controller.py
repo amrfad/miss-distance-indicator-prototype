@@ -50,6 +50,7 @@ class DroneAudioSystem:
         self.detector = EventDetector()
         self.comms = comms if comms is not None else SerialCommunicator()
 
+        self.current_session_id = None
         self.current_session_dir = None
         self.chunks_dir = None
         self.recording_start_time = None
@@ -88,6 +89,7 @@ class DroneAudioSystem:
         timestamp = datetime.now().strftime(TIMESTAMP_FORMAT)
         uid = uuid.uuid4().hex[:6]
         session_id = f"session_{timestamp}_{uid}"
+        self.current_session_id = session_id
         self.current_session_dir = os.path.join(self.base_output_dir, session_id)
         self.chunks_dir = os.path.join(self.current_session_dir, "chunks")
         os.makedirs(self.chunks_dir, exist_ok=True)
@@ -214,6 +216,7 @@ class DroneAudioSystem:
 
         ring_buffer = bytearray()
         READ_SIZE = 4096  # bytes per read call
+        chunk_index = 0
 
         while True:
             data = self.recorder.read_raw_bytes(READ_SIZE)
@@ -231,9 +234,11 @@ class DroneAudioSystem:
                 # Pertahankan overlap_bytes terakhir untuk window berikutnya
                 ring_buffer = bytearray(ring_buffer[chunk_bytes:])
 
+                chunk_offset_sec = round(chunk_index * chunk_dur, 3)
                 # Masukkan ke antrian non-blocking. Jika queue penuh, buang chunk
                 try:
-                    self.chunk_queue.put_nowait((window, bpf, sample_rate))
+                    self.chunk_queue.put_nowait((window, bpf, sample_rate, chunk_index, chunk_offset_sec))
+                    chunk_index += 1
                 except queue.Full:
                     print("[WARNING] Worker queue is FULL (Max 10). Dropping chunk ini agar streamer tidak freeze.")
 
@@ -245,9 +250,10 @@ class DroneAudioSystem:
         if len(ring_buffer) > 0:
             min_bytes = self.recorder.bytes_for_duration(0.5)  # minimal 0.5 detik
             if len(ring_buffer) >= min_bytes:
-                print(f"[STREAM] Processing final chunk ({len(ring_buffer)} bytes)")
+                chunk_offset_sec = round(chunk_index * chunk_dur, 3)
+                print(f"[STREAM] Processing final chunk ({len(ring_buffer)} bytes, offset: {chunk_offset_sec}s)")
                 try:
-                    self.chunk_queue.put_nowait((bytes(ring_buffer), bpf, sample_rate))
+                    self.chunk_queue.put_nowait((bytes(ring_buffer), bpf, sample_rate, chunk_index, chunk_offset_sec))
                 except queue.Full:
                     print("[WARNING] Worker queue is FULL. Dropping final chunk.")
             else:
@@ -272,23 +278,35 @@ class DroneAudioSystem:
                 self.chunk_queue.task_done()
                 break
                 
-            window, bpf, sample_rate = item
+            if len(item) == 5:
+                window, bpf, sample_rate, chunk_idx, chunk_offset_sec = item
+            else:
+                window, bpf, sample_rate = item[:3]
+                chunk_idx = 0
+                chunk_offset_sec = 0.0
+
             try:
                 # Disini jalankan pemrosesan chunk 
-                self._process_chunk_bytes(window, bpf, sample_rate)
+                self._process_chunk_bytes(
+                    window, bpf, sample_rate,
+                    chunk_idx=chunk_idx,
+                    chunk_offset_sec=chunk_offset_sec
+                )
             except Exception as e:
                 print(f"[WORKER] Error pada chunk_worker_loop: {e}")
             finally:
                 self.chunk_queue.task_done()
 
-    def _process_chunk_bytes(self, raw_bytes: bytes, bpf: int, sample_rate: int):
+    def _process_chunk_bytes(self, raw_bytes: bytes, bpf: int, sample_rate: int, chunk_idx: int = 0, chunk_offset_sec: float = 0.0):
         """
         Konversi raw PCM bytes → proses audio → hitung TDOA → kirim JSON.
 
         Args:
-            raw_bytes:   Byte string raw PCM (interleaved, semua channel)
-            bpf:         Bytes per frame (bytes_per_sample × num_channels)
-            sample_rate: Sample rate dalam Hz
+            raw_bytes:        Byte string raw PCM (interleaved, semua channel)
+            bpf:              Bytes per frame (bytes_per_sample × num_channels)
+            sample_rate:      Sample rate dalam Hz
+            chunk_idx:        Index urutan chunk dalam session (0, 1, 2, ...)
+            chunk_offset_sec: Waktu awal chunk relatif terhadap awal sesi rekaman (detik)
         """
         cfg = get_global_config_manager().get_config()
         active_indices = self.recorder.get_active_take_indices()
@@ -312,7 +330,7 @@ class DroneAudioSystem:
 
             self._write_wav(chunk_wav_path, data_np, sample_rate)
             duration = data_np.shape[0] / sample_rate
-            print(f"\n[CHUNK] Processing {chunk_name} ({duration:.2f}s)")
+            print(f"\n[CHUNK #{chunk_idx}] Processing {chunk_name} (offset: {chunk_offset_sec:.2f}s, dur: {duration:.2f}s)")
 
             # 2. Extract & filter channels
             original_files, data, sr, actual_duration = self.processor.extract_channels(
@@ -348,12 +366,22 @@ class DroneAudioSystem:
                 end_sample = min(filtered_data.shape[0], int(event["padded_end"] * sr))
                 event_audio = filtered_data[start_sample:end_sample, :]
                 event_tdoa = calculate_all_tdoa(event_audio, sr, channel_indices=active_indices)
+
+                orig_start = event.get("original_start", 0.0)
+                orig_end = event.get("original_end", 0.0)
+                abs_start = round(chunk_offset_sec + orig_start, 3)
+                abs_end = round(chunk_offset_sec + orig_end, 3)
+
                 tdoa_results.append({
                     "event_number": event["event_number"],
-                    # Waktu absolut dihitung dari awal session untuk deduplikasi di darat
+                    "session_id": self.current_session_id or "unknown_session",
+                    "chunk_index": chunk_idx,
+                    "chunk_offset_sec": chunk_offset_sec,
                     "chunk_timestamp": ts,
-                    "event_start_in_chunk": event["original_start"],
-                    "event_end_in_chunk": event["original_end"],
+                    "event_start_in_chunk": orig_start,
+                    "event_end_in_chunk": orig_end,
+                    "event_abs_start_sec": abs_start,
+                    "event_abs_end_sec": abs_end,
                     "tdoa": event_tdoa
                 })
 
@@ -487,6 +515,7 @@ class DroneAudioSystem:
 
     def _reset_state(self):
         """Reset internal state setelah session selesai."""
+        self.current_session_id = None
         self.current_session_dir = None
         self.chunks_dir = None
         self.recording_start_time = None

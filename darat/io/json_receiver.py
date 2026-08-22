@@ -60,8 +60,9 @@ class JsonReceiver:
         # Continuous mode state
         self._stop_flag = threading.Event()
 
-        # Deduplikasi: set of (chunk_timestamp, event_number) yang sudah pernah disimpan
-        self._seen_event_ids: set[tuple] = set()
+        # Deduplikasi: tracking interval waktu event unik per session (session_id, abs_start, abs_end)
+        self._seen_session_events: list[tuple[str, float, float]] = []  # list of (session_id, abs_start, abs_end)
+        self._seen_legacy_keys: set[tuple] = set()                      # fallback for legacy format
         self._seen_lock = threading.Lock()
 
     @property
@@ -89,7 +90,8 @@ class JsonReceiver:
         """
         self._stop_flag.clear()
         with self._seen_lock:
-            self._seen_event_ids.clear()
+            self._seen_session_events.clear()
+            self._seen_legacy_keys.clear()
 
     # ------------------------------------------------------------------
     # Internal data router (didaftarkan ke FileTransferManager)
@@ -107,41 +109,81 @@ class JsonReceiver:
         """
         Filter event yang sudah pernah diterima sebelumnya.
 
-        Kunci deduplikasi: (chunk_timestamp, event_number)
-        Jika chunk_timestamp tidak ada di JSON (format lama), gunakan UUID acak
-        sehingga selalu dianggap unik.
+        Strategi:
+          1. Jika event memiliki rentang waktu 'event_abs_start_sec' dan 'event_abs_end_sec':
+             Cek apakah rentang waktu [start, end] beririsan (overlap) dengan event yang
+             sudah pernah diterima pada session yang sama (dengan toleransi edge 0.05s).
+             Jika beririsan, event dianggap sebagai tembakan yang sama dan dibuang.
+          2. Fallback (format lama):
+             Kunci deduplikasi: (chunk_timestamp, event_number).
 
         Args:
             parsed_json: Dict JSON yang sudah di-parse
 
         Returns:
             Salinan dict dengan field 'events' yang sudah difilter.
-            Mengembalikan dict yang sama jika tidak ada field 'events'.
         """
         events = parsed_json.get("events")
         if not isinstance(events, list):
             return parsed_json  # Format tidak dikenal, lewati deduplikasi
 
+        session_id_top = parsed_json.get("session_id")
         filtered = []
-        new_ids = []
+        new_session_events = []
+        new_legacy_keys = []
 
-        for ev in events:
-            chunk_ts = ev.get("chunk_timestamp", f"_unique_{id(ev)}")
-            ev_num = ev.get("event_number", "_")
-            key = (chunk_ts, ev_num)
-
-            with self._seen_lock:
-                if key in self._seen_event_ids:
-                    self._log(f"[DEDUP] Event duplikat dilewati: chunk={chunk_ts}, event={ev_num}")
-                    continue
-                new_ids.append(key)
-
-            filtered.append(ev)
-
-        # Daftarkan semua ID baru setelah selesai iterasi
         with self._seen_lock:
-            for key in new_ids:
-                self._seen_event_ids.add(key)
+            for ev in events:
+                session_id = ev.get("session_id") or session_id_top
+                abs_start = ev.get("event_abs_start_sec")
+                abs_end = ev.get("event_abs_end_sec")
+
+                if abs_start is not None and session_id:
+                    try:
+                        start_val = float(abs_start)
+                        end_val = float(abs_end) if abs_end is not None else start_val + 0.25
+
+                        # Cek apakah interval [start_val, end_val] beririsan dengan event yang sudah ada
+                        TOLERANCE = 0.05
+                        is_dup = False
+                        for seen_sess, seen_start, seen_end in self._seen_session_events:
+                            if seen_sess == session_id:
+                                overlap_start = max(seen_start - TOLERANCE, start_val - TOLERANCE)
+                                overlap_end = min(seen_end + TOLERANCE, end_val + TOLERANCE)
+                                intersection = overlap_end - overlap_start
+                                if intersection > 0:
+                                    self._log(
+                                        f"[DEDUP] Overlap duplicate skipped: session={session_id}, "
+                                        f"interval=[{start_val:.3f}s, {end_val:.3f}s] "
+                                        f"overlaps with seen=[{seen_start:.3f}s, {seen_end:.3f}s] "
+                                        f"(intersection={intersection:.3f}s)"
+                                    )
+                                    is_dup = True
+                                    break
+
+                        if is_dup:
+                            continue
+
+                        new_session_events.append((session_id, start_val, end_val))
+                        filtered.append(ev)
+                    except (ValueError, TypeError):
+                        filtered.append(ev)
+                else:
+                    # Fallback untuk format lama tanpa waktu absolut
+                    chunk_ts = ev.get("chunk_timestamp", f"_unique_{id(ev)}")
+                    ev_num = ev.get("event_number", "_")
+                    key = (chunk_ts, ev_num)
+
+                    if key in self._seen_legacy_keys:
+                        self._log(f"[DEDUP] Event duplikat dilewati: chunk={chunk_ts}, event={ev_num}")
+                        continue
+
+                    new_legacy_keys.append(key)
+                    filtered.append(ev)
+
+            # Daftarkan semua event baru
+            self._seen_session_events.extend(new_session_events)
+            self._seen_legacy_keys.update(new_legacy_keys)
 
         if len(filtered) < len(events):
             self._log(

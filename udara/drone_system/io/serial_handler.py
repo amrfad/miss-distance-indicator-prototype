@@ -145,7 +145,7 @@ class SerialHandler:
                         chunk = file_data[i:i + CHUNK_SIZE]
                         self.serial.write(chunk)
                         bytes_sent += len(chunk)
-                        time.sleep(0.02)
+                        time.sleep(0.05)
 
                     self.serial.flush()
                     time.sleep(0.05)
