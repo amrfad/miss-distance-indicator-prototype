@@ -101,11 +101,11 @@ def create_app(config_manager: GroundConfigManager) -> FastAPI:
             return _err("VALIDATION_ERROR", "Request body tidak boleh kosong")
 
         try:
-            result = config_manager.update(body)
+            config_manager.update(body)
         except ConfigError as e:
             return _err(e.code, e.message, e.field)
 
-        return _ok(result)
+        return _ok(config_manager.get_all())
 
     # ── GET /config/ground/schema ─────────────────────────────────────
 
@@ -129,11 +129,11 @@ def create_app(config_manager: GroundConfigManager) -> FastAPI:
         scope = body.get("scope", "all") if isinstance(body, dict) else "all"
 
         try:
-            result = config_manager.reset(scope)
+            config_manager.reset(scope)
         except ConfigError as e:
             return _err(e.code, e.message, e.field)
 
-        return _ok(result)
+        return _ok(config_manager.get_all())
 
     return app
 

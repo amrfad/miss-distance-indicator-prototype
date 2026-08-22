@@ -373,6 +373,12 @@ class MainDashboard(QMainWindow):
         if "drone_port" in data:
             self._rest_client.set_drone_port(data["drone_port"])
             self._log.log(f"RestClient target port updated: {data['drone_port']}", "INFO")
+        if "baud_rate" in data:
+            self._serial_bridge.manager.baud_rate = int(data["baud_rate"])
+        if "serial_timeout" in data:
+            self._serial_bridge.manager.timeout = float(data["serial_timeout"])
+        if "serial_port" in data:
+            self._log.log(f"[CONFIG] Target serial port updated to: {data['serial_port']}", "INFO")
 
     def closeEvent(self, event):
         self._serial_bridge.disconnect()

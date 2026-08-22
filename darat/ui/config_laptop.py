@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QLabel, QGridLayout, QScrollArea, QFrame,
     QStackedWidget, QListWidget,
 )
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Signal, Qt, QThread, QTimer
 
 from .widgets.collapsible_section import CollapsibleSection
 try:
@@ -28,6 +28,21 @@ _DEFAULT_MIC_POSITIONS = {
     "mic4": {"x": -0.50, "y": -0.11, "z": -0.16},
     "mic5": {"x": 0.13, "y": -0.01, "z": -0.17},
 }
+
+
+class _PortScanWorker(QThread):
+    ports_found = Signal(list, list)
+
+    def run(self):
+        try:
+            ports = serial.tools.list_ports.comports()
+        except Exception:
+            ports = []
+        valid_ports = [p for p in ports if not is_bluetooth_port(p)]
+        usb_ports = [p for p in valid_ports if is_usb_port(p)]
+        other_ports = [p for p in valid_ports if not is_usb_port(p)]
+        bt_ports = [p for p in ports if is_bluetooth_port(p)]
+        self.ports_found.emit(usb_ports + other_ports, bt_ports)
 
 
 def _make_page(*sections: QWidget) -> QWidget:
@@ -272,17 +287,15 @@ class LaptopConfigPanel(QWidget):
     # ── Serial Port Detection ─────────────────────────────────────────────
 
     def refresh_serial_ports(self):
-        """Re-scan available COM ports on laptop and refresh dropdown choices with animated feedback."""
-        from PySide6.QtCore import QCoreApplication, QTimer
-
+        """Re-scan available COM ports on laptop asynchronously in background worker."""
         self.btn_refresh_ports.setEnabled(False)
         self.btn_refresh_ports.setText("Scanning...")
-        QCoreApplication.processEvents()
 
         current_val = self._get_serial_port_value()
-        self._update_serial_port_selection(current_val)
 
-        def _on_done():
+        self._scan_worker = _PortScanWorker()
+        def _on_ports(ordered_ports, bt_ports):
+            self._apply_scanned_ports(ordered_ports, bt_ports, current_val)
             self.btn_refresh_ports.setText("Refreshed!")
             QTimer.singleShot(700, _reset_button)
 
@@ -290,23 +303,41 @@ class LaptopConfigPanel(QWidget):
             self.btn_refresh_ports.setText("Detect Ports")
             self.btn_refresh_ports.setEnabled(True)
 
-        QTimer.singleShot(250, _on_done)
+        self._scan_worker.ports_found.connect(_on_ports)
+        self._scan_worker.finished.connect(self._scan_worker.deleteLater)
+        self._scan_worker.start()
 
     def _update_serial_port_selection(self, target_port: str = ""):
-        self.serial_port.blockSignals(True)
-        self.serial_port.clear()
+        # Fast path: check if target_port is already present in current dropdown items
+        if self.serial_port.count() > 0 and target_port:
+            idx = self.serial_port.findData(target_port)
+            if idx < 0:
+                idx = self.serial_port.findText(target_port)
+            if idx >= 0:
+                self.serial_port.blockSignals(True)
+                self.serial_port.setCurrentIndex(idx)
+                self.serial_port.blockSignals(False)
+                return
+            elif self.serial_port.isEditable():
+                self.serial_port.blockSignals(True)
+                self.serial_port.setCurrentText(target_port)
+                self.serial_port.blockSignals(False)
+                return
 
+        # Synchronous fallback scan if dropdown empty or unlisted
         try:
             ports = serial.tools.list_ports.comports()
         except Exception:
             ports = []
-
         valid_ports = [p for p in ports if not is_bluetooth_port(p)]
         usb_ports = [p for p in valid_ports if is_usb_port(p)]
         other_ports = [p for p in valid_ports if not is_usb_port(p)]
         bt_ports = [p for p in ports if is_bluetooth_port(p)]
+        self._apply_scanned_ports(usb_ports + other_ports, bt_ports, target_port)
 
-        ordered_ports = usb_ports + other_ports
+    def _apply_scanned_ports(self, ordered_ports: list, bt_ports: list, target_port: str = ""):
+        self.serial_port.blockSignals(True)
+        self.serial_port.clear()
 
         found = False
         for p in ordered_ports:
