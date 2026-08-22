@@ -15,6 +15,10 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Signal, Qt
 
 from .widgets.collapsible_section import CollapsibleSection
+try:
+    from ..io.serial_manager import is_bluetooth_port, is_usb_port, format_port_label
+except (ImportError, ValueError):
+    from darat.io.serial_manager import is_bluetooth_port, is_usb_port, format_port_label
 
 _DEFAULT_MIC_POSITIONS = {
     "mic0": {"x": -1.58, "y": 0.77, "z": 0.09},
@@ -122,7 +126,7 @@ class LaptopConfigPanel(QWidget):
         self.serial_port.setToolTip("Select detected COM port or type custom port (e.g. COM3, /dev/ttyUSB0)")
 
         self.btn_refresh_ports = QPushButton("Detect Ports")
-        self.btn_refresh_ports.setObjectName("btnSecondary")
+        self.btn_refresh_ports.setObjectName("btnPrimary")
         self.btn_refresh_ports.setFixedHeight(28)
         self.btn_refresh_ports.setToolTip("Scan available serial COM ports on laptop")
         self.btn_refresh_ports.clicked.connect(self.refresh_serial_ports)
@@ -268,9 +272,25 @@ class LaptopConfigPanel(QWidget):
     # ── Serial Port Detection ─────────────────────────────────────────────
 
     def refresh_serial_ports(self):
-        """Re-scan available COM ports on laptop and refresh dropdown choices."""
+        """Re-scan available COM ports on laptop and refresh dropdown choices with animated feedback."""
+        from PySide6.QtCore import QCoreApplication, QTimer
+
+        self.btn_refresh_ports.setEnabled(False)
+        self.btn_refresh_ports.setText("Scanning...")
+        QCoreApplication.processEvents()
+
         current_val = self._get_serial_port_value()
         self._update_serial_port_selection(current_val)
+
+        def _on_done():
+            self.btn_refresh_ports.setText("Refreshed!")
+            QTimer.singleShot(700, _reset_button)
+
+        def _reset_button():
+            self.btn_refresh_ports.setText("Detect Ports")
+            self.btn_refresh_ports.setEnabled(True)
+
+        QTimer.singleShot(250, _on_done)
 
     def _update_serial_port_selection(self, target_port: str = ""):
         self.serial_port.blockSignals(True)
@@ -281,17 +301,31 @@ class LaptopConfigPanel(QWidget):
         except Exception:
             ports = []
 
+        valid_ports = [p for p in ports if not is_bluetooth_port(p)]
+        usb_ports = [p for p in valid_ports if is_usb_port(p)]
+        other_ports = [p for p in valid_ports if not is_usb_port(p)]
+        bt_ports = [p for p in ports if is_bluetooth_port(p)]
+
+        ordered_ports = usb_ports + other_ports
+
         found = False
-        for p in ports:
+        for p in ordered_ports:
             dev = p.device
-            desc = p.description
-            display_name = f"{dev} ({desc})" if desc and desc != dev and desc.lower() != "n/a" else dev
+            display_name = format_port_label(p)
+
             self.serial_port.addItem(display_name, dev)
             if dev == target_port or display_name == target_port:
                 found = True
 
+        # Handle target_port if it was unlisted or a bluetooth port
         if target_port and not found:
-            self.serial_port.addItem(target_port, target_port)
+            matching_bt = [p for p in bt_ports if p.device == target_port]
+            if matching_bt:
+                bt_p = matching_bt[0]
+                display_name = f"{format_port_label(bt_p)} (Bluetooth)"
+                self.serial_port.addItem(display_name, target_port)
+            else:
+                self.serial_port.addItem(target_port, target_port)
 
         idx = self.serial_port.findData(target_port)
         if idx < 0:
@@ -319,9 +353,13 @@ class LaptopConfigPanel(QWidget):
             item_data = self.serial_port.itemData(idx)
             if item_text == text and item_data:
                 return str(item_data)
-        if " (" in text:
-            return text.split(" (")[0].strip()
-        return text
+
+        raw = text.strip()
+        if " — " in raw:
+            raw = raw.split(" — ")[0].strip()
+        if " (" in raw:
+            raw = raw.split(" (")[0].strip()
+        return raw
 
     # ── Data methods ──────────────────────────────────────────────────────
 

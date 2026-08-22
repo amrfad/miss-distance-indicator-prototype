@@ -5,6 +5,55 @@ import serial
 import serial.tools.list_ports
 
 
+
+def is_bluetooth_port(port_info) -> bool:
+    """Check if port is likely a Bluetooth serial port."""
+    desc = getattr(port_info, 'description', '') or ''
+    hwid = getattr(port_info, 'hwid', '') or ''
+    combined = f"{desc} {hwid}".lower()
+    return "bluetooth" in combined or "bthmodem" in combined
+
+
+def is_usb_port(port_info) -> bool:
+    """Check if port is a physical USB-to-Serial converter or USB CDC device."""
+    vid = getattr(port_info, 'vid', None)
+    pid = getattr(port_info, 'pid', None)
+    hwid = getattr(port_info, 'hwid', '') or ''
+    desc = getattr(port_info, 'description', '') or ''
+    if vid is not None or pid is not None:
+        return True
+    combined = f"{desc} {hwid}".lower()
+    return "usb" in combined or "vid:" in combined or "ttyusb" in combined or "ttyacm" in combined
+
+
+def format_port_label(port_info) -> str:
+    """Format port for human-friendly dropdown display."""
+    dev = getattr(port_info, 'device', str(port_info))
+    desc = getattr(port_info, 'description', '') or ''
+    manufacturer = getattr(port_info, 'manufacturer', '') or ''
+
+    if desc.lower() == "n/a" or desc == dev:
+        desc = ""
+
+    chip_keywords = ["cp210", "ftdi", "ch340", "ch341", "prolific", "siyi", "silicon labs", "usb serial"]
+    combined = f"{desc} {manufacturer}".lower()
+
+    tag = ""
+    if any(k in combined for k in chip_keywords):
+        tag = desc if desc else manufacturer
+    elif is_usb_port(port_info):
+        tag = desc if desc else "USB Serial Device"
+    elif desc:
+        tag = desc
+
+    if tag and tag.lower() != dev.lower():
+        tag_cleaned = tag
+        if f"({dev})" in tag_cleaned:
+            tag_cleaned = tag_cleaned.replace(f"({dev})", "").strip()
+        return f"{dev} — {tag_cleaned}"
+    return dev
+
+
 class SerialManager:
     def __init__(self, baud_rate=230400, timeout=1):
         """Initialize serial manager with connection parameters"""
@@ -20,14 +69,20 @@ class SerialManager:
         self.on_data_received = None
 
     def detect_and_connect(self):
-        """Automatically detect and connect to the first available serial port"""
+        """Automatically detect and connect to the first available USB serial port"""
         try:
             # Get list of available serial ports
             ports = serial.tools.list_ports.comports()
 
-            if ports:
-                # Use the first available port
-                port_name = ports[0].device
+            # Filter out Bluetooth ports, prioritize USB serial ports
+            filtered_ports = [p for p in ports if not is_bluetooth_port(p)]
+            usb_ports = [p for p in filtered_ports if is_usb_port(p)]
+
+            target_ports = usb_ports if usb_ports else (filtered_ports if filtered_ports else ports)
+
+            if target_ports:
+                # Use the first available USB / valid port
+                port_name = target_ports[0].device
                 self.serial_port = serial.Serial(
                     port_name, self.baud_rate, timeout=self.timeout
                 )
@@ -133,11 +188,25 @@ class SerialManager:
         return None
 
     def get_available_ports(self):
-        """Get list of available serial ports"""
+        """Get list of available serial ports with enriched hardware details"""
         ports = serial.tools.list_ports.comports()
-        return [
-            {"device": port.device, "description": port.description} for port in ports
-        ]
+        result = []
+        for port in ports:
+            is_bt = is_bluetooth_port(port)
+            is_usb = is_usb_port(port)
+            label = format_port_label(port)
+            result.append({
+                "device": port.device,
+                "description": port.description,
+                "manufacturer": getattr(port, 'manufacturer', None),
+                "vid": getattr(port, 'vid', None),
+                "pid": getattr(port, 'pid', None),
+                "hwid": getattr(port, 'hwid', None),
+                "is_bluetooth": is_bt,
+                "is_usb": is_usb,
+                "display_label": label,
+            })
+        return result
 
     def disconnect(self):
         """Disconnect from serial port and clean up"""
