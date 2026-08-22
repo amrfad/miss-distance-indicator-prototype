@@ -52,11 +52,16 @@ class MainDashboard(QMainWindow):
         )
 
         # Direktori penyimpanan file yang diterima dari drone
-        # → Prototype/drone_recordings/ (relatif terhadap root project)
-        _project_root = os.path.realpath(
-            os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
-        )
-        self._drone_save_dir = os.path.join(_project_root, "drone_recordings")
+        # → In .exe mode: folder 'drone_recordings' di sebelah MDI_Ground.exe
+        # → In dev mode: Prototype/drone_recordings/
+        import sys
+        if getattr(sys, 'frozen', False):
+            _base_dir = os.path.dirname(sys.executable)
+        else:
+            _base_dir = os.path.realpath(
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+            )
+        self._drone_save_dir = os.path.join(_base_dir, "drone_recordings")
         os.makedirs(self._drone_save_dir, exist_ok=True)
 
         self._ft_log_msgs: list[str] = []
@@ -230,8 +235,8 @@ class MainDashboard(QMainWindow):
             log_callback=self._log.log if hasattr(self, '_log') else None,
             navigate_callback=self._navigate,
         )
-        self._page_process = ProcessPage(working_dir=os.getcwd())
-        self._page_visualize = VisualizePage(working_dir=os.getcwd())
+        self._page_process = ProcessPage(working_dir=self._drone_save_dir)
+        self._page_visualize = VisualizePage(working_dir=self._drone_save_dir)
 
         self._stack.addWidget(self._page_config)
         self._stack.addWidget(self._page_command)

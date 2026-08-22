@@ -1,7 +1,7 @@
 {
-  "baud_rate": 230400,
+  "baud_rate": 57600,
   "serial_timeout": 1.0,
-  "serial_port": "COM3",
+  "serial_port": "COM5",
   "raspi_ip": "10.99.99.2",
   "drone_port": 5000,
   "speed_of_sound": 343.0,

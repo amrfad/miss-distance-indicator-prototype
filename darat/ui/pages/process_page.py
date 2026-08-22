@@ -109,6 +109,24 @@ class ProcessPage(QWidget):
         self._dir_label.setText(path)
         self._refresh_file_list()
 
+    def process_file(self, file_path: str):
+        """Pilih dan proses file JSON secara otomatis (dipanggil dari CommandPage / tombol PROCESS DATA)."""
+        if not file_path or not os.path.exists(file_path):
+            return
+        directory = os.path.dirname(file_path)
+        if directory:
+            self.set_working_dir(directory)
+
+        # Cari item di file list dan pilih item tersebut
+        for i in range(self._file_list.count()):
+            item = self._file_list.item(i)
+            if item.data(Qt.ItemDataRole.UserRole) == file_path:
+                self._file_list.setCurrentItem(item)
+                break
+
+        # Jalankan pemrosesan TDOA
+        self._process_selected()
+
     # ─────────────────────────────────────────────────────────────────────────
     # Build UI
     # ─────────────────────────────────────────────────────────────────────────

@@ -27,7 +27,7 @@ Write-Host "Sedang mengemas MDI_Ground..." -ForegroundColor Yellow
 # --onefile : Jadikan satu file
 # --windowed : Hilangkan Background Terminal (console) karena pakai PyQt
 # --uac-admin : Auto "Run As Administrator" (Wajib untuk PowerShell Static IP adapter)
-# --add-data : Masukkan asset file statis (.qss UI Themes)
+# --add-data : Masukkan asset file statis (.qss UI Themes, 3D mesh plane.ply)
 
 # Workaround untuk error _ctypes pada environment Conda (mencari ffi dll)
 $PythonPrefix = python -c "import sys; print(sys.base_prefix)"
@@ -67,7 +67,8 @@ pyinstaller --noconfirm `
     --hidden-import="darat.localization.builtin_ssl.pivot" `
     --hidden-import="darat.localization.builtin_ssl.consensus" `
     --hidden-import="darat.localization.builtin_ssl.density_consensus" `
-    --add-data "darat/ui/styles/mdi_theme.qss;darat/ui/styles" `
+    --add-data "darat/ui/styles;darat/ui/styles" `
+    --add-data "darat/assets/plane.ply;darat/assets" `
     @AddBinaryArgs `
     darat/main.py
 
