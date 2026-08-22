@@ -43,7 +43,7 @@ class DataLogger:
             
         try:
             with open(json_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
+                json.dump(data, f, separators=(",", ":"))
             print(f"[LOG] Saved session data to {json_path}")
         except Exception as e:
             print(f"[ERROR] Failed to save JSON log: {e}")

@@ -102,6 +102,6 @@ def calculate_all_tdoa(data, fs, channel_indices=None):
                 tdoa = calculate_cross_correlation(sig1, sig2, fs)
             
         key = f"mic{log_idx1}-mic{log_idx2}"
-        results[key] = tdoa
+        results[key] = round(float(tdoa), 7)
         
     return results
