@@ -252,7 +252,7 @@ def run_online_mode(audio_system, config_manager=None):
     """Run dalam ONLINE mode dengan serial communication"""
     cfg = config_manager.get_config()
     serial_port = cfg.get("serial_port", "/dev/ttyUSB0")
-    baud_rate = cfg.get("baud_rate", 230400)
+    baud_rate = cfg.get("baud_rate", 115200)
     timeout = cfg.get("serial_timeout", 5)
 
     serial_handler = SerialHandler(port=serial_port, baudrate=baud_rate, timeout=timeout)
@@ -265,6 +265,9 @@ def run_online_mode(audio_system, config_manager=None):
         print("  2. Permission sudah benar (sudo usermod -a -G dialout $USER)")
         print("  3. Tidak ada program lain yang menggunakan port tersebut")
         return 1
+    
+    # Berikan shared serial_handler ke audio_system agar tidak ada port ganda
+    audio_system.set_comms(serial_handler)
     
     try:
         while True:

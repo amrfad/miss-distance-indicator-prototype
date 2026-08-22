@@ -39,7 +39,7 @@ from .config_manager import get_global_config_manager
 class DroneAudioSystem:
     """Sistem utama yang mengkoordinasi semua module dengan continuous streaming."""
 
-    def __init__(self):
+    def __init__(self, comms=None):
         """Initialize sistem dengan semua module yang diperlukan."""
         self.recorder = AudioRecorder()
 
@@ -48,7 +48,7 @@ class DroneAudioSystem:
         self.processor = AudioProcessor(output_format=output_format)
 
         self.detector = EventDetector()
-        self.comms = SerialCommunicator()
+        self.comms = comms if comms is not None else SerialCommunicator()
 
         self.current_session_dir = None
         self.chunks_dir = None
@@ -65,6 +65,10 @@ class DroneAudioSystem:
         os.makedirs(self.base_output_dir, exist_ok=True)
 
         print(f"[SYSTEM] DroneAudioSystem initialized (format: {output_format})")
+
+    def set_comms(self, comms):
+        """Set shared serial handler/communicator instance."""
+        self.comms = comms
 
     # ------------------------------------------------------------------
     # Public API
@@ -387,10 +391,10 @@ class DroneAudioSystem:
 
             # 7. Kirim ke ground (hanya ONLINE mode)
             if cfg.get("operation_mode", "OFFLINE") == "ONLINE":
-                if self.comms.send_file(tdoa_json_path):
+                if self.comms and self.comms.send_file(tdoa_json_path):
                     print(f"[CHUNK] TDOA sent successfully.")
                 else:
-                    print(f"[CHUNK] Failed to send TDOA.")
+                    print(f"[CHUNK] Failed to send TDOA (comms unavailable or send error).")
             else:
                 print(f"[CHUNK] OFFLINE mode — skip serial transmission")
 
