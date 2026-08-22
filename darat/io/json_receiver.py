@@ -219,7 +219,6 @@ class JsonReceiver:
                 self._log("[ERROR] Serial not connected")
                 return False
 
-            self._json_buffer = bytearray()
             self.file_transfer.set_json_router(self._route_data)
 
             return self._receive_once_inner(on_saved)
@@ -266,122 +265,112 @@ class JsonReceiver:
                     )
 
                     # Cek START marker
-                    if not receiving and b"[START]" in buffer:
-                        receiving = True
-                        start_time = time.time()
-                        start_idx = buffer.find(b"[START]\n")
-                        start_idx += len(b"[START]\n")
-                        while start_idx < len(buffer) and buffer[start_idx: start_idx + 1] == b"\n":
-                            start_idx += 1
-                        buffer = buffer[start_idx:]
-                        self._log("[RX] [START] marker detected. Receiving JSON...")
+                    if not receiving:
+                        if b"[START]\n" in buffer:
+                            receiving = True
+                            start_time = time.time()
+                            start_idx = buffer.find(b"[START]\n")
+                            buffer = buffer[start_idx + len(b"[START]\n"):].lstrip(b"\n")
+                            self._log("[RX] [START] marker detected. Receiving JSON...")
+                            self._log(
+                                f"[DEBUG] Buffer after START (first 100 bytes): {repr(buffer[:100])}"
+                            )
+                        elif b"[START]" in buffer:
+                            # Marker belum lengkap dengan newline, tunggu chunk data berikutnya
+                            pass
+
+                # Cek END marker jika sedang receiving
+                if receiving:
+                    end_idx = -1
+                    end_marker_len = 0
+                    if b"\n[END]\n" in buffer:
+                        end_idx = buffer.find(b"\n[END]\n")
+                        end_marker_len = len(b"\n[END]\n")
+                    elif b"[END]\n" in buffer:
+                        end_idx = buffer.find(b"[END]\n")
+                        end_marker_len = len(b"[END]\n")
+                    elif b"\n[END]" in buffer:
+                        end_idx = buffer.find(b"\n[END]")
+                        end_marker_len = len(b"\n[END]")
+                    elif b"[END]" in buffer:
+                        end_idx = buffer.find(b"[END]")
+                        end_marker_len = len(b"[END]")
+
+                    if end_idx >= 0:
+                        json_data = buffer[:end_idx].rstrip(b"\n")
+                        # Simpan sisa data setelah END marker untuk paket berikutnya
+                        trailing_data = buffer[end_idx + end_marker_len:].lstrip(b"\n")
+                        if trailing_data:
+                            self._json_buffer = bytearray(trailing_data) + self._json_buffer
+
                         self._log(
-                            f"[DEBUG] Buffer after START (first 100 bytes): {repr(buffer[:100])}"
+                            f"[DEBUG] Processing JSON — [END] at position {end_idx}"
+                        )
+                        self._log(f"[DEBUG] Total buffer size: {len(buffer)} bytes")
+                        self._log(f"[DEBUG] JSON data length: {len(json_data)} bytes")
+                        self._log(
+                            f"[DEBUG] JSON preview (first 200 bytes): {repr(json_data[:200])}"
+                        )
+                        self._log(
+                            f"[DEBUG] JSON preview (last 200 bytes): {repr(json_data[-200:])}"
                         )
 
-                # Cek END marker
-                if receiving and not end_detected:
-                    if (
-                        b"\n[END]" in buffer
-                        or b"[END]\n" in buffer
-                        or b"[END]" in buffer
-                        or b"\n[END]\n" in buffer
-                    ):
-                        end_detected = True
-                        end_detected_time = time.time()
-                        self._log("[DEBUG] [END] marker detected, waiting for remaining data...")
+                        end_time = time.time()
 
-                # Proses JSON setelah END + jeda 1 detik
-                if end_detected and end_detected_time:
-                    time_since_end = time.time() - end_detected_time
-                    if time_since_end >= 1.0:
-                        end_idx = -1
-                        if b"\n[END]" in buffer:
-                            end_idx = buffer.find(b"\n[END]")
-                        elif b"[END]\n" in buffer:
-                            end_idx = buffer.find(b"[END]\n")
-                        elif b"\n[END]\n" in buffer:
-                            end_idx = buffer.find(b"\n[END]\n")
-                        else:
-                            end_idx = buffer.find(b"[END]")
+                        try:
+                            json_str = json_data.decode("utf-8")
 
-                        if end_idx >= 0:
-                            json_data = buffer[:end_idx]
-                            while json_data.endswith(b"\n"):
-                                json_data = json_data[:-1]
+                            open_braces = json_str.count("{")
+                            close_braces = json_str.count("}")
+                            open_brackets = json_str.count("[")
+                            close_brackets = json_str.count("]")
 
-                            self._log(
-                                f"[DEBUG] Processing JSON — [END] at position {end_idx}"
-                            )
-                            self._log(f"[DEBUG] Total buffer size: {len(buffer)} bytes")
-                            self._log(f"[DEBUG] JSON data length: {len(json_data)} bytes")
-                            self._log(
-                                f"[DEBUG] JSON preview (first 200 bytes): {repr(json_data[:200])}"
-                            )
-                            self._log(
-                                f"[DEBUG] JSON preview (last 200 bytes): {repr(json_data[-200:])}"
-                            )
-
-                            end_time = time.time()
-
-                            try:
-                                json_str = json_data.decode("utf-8")
-
-                                open_braces = json_str.count("{")
-                                close_braces = json_str.count("}")
-                                open_brackets = json_str.count("[")
-                                close_brackets = json_str.count("]")
-
-                                if open_braces != close_braces:
-                                    self._log(
-                                        f"[ERROR] Unbalanced braces: {{ {open_braces} vs }} {close_braces}"
-                                    )
-                                    self._log("[ERROR] JSON incomplete or corrupted")
-                                    self._save_debug_file(json_data, buffer, end_idx)
-                                    return False
-
-                                if open_brackets != close_brackets:
-                                    self._log(
-                                        f"[ERROR] Unbalanced brackets: [ {open_brackets} vs ] {close_brackets}"
-                                    )
-                                    self._log("[ERROR] JSON incomplete or corrupted")
-                                    self._save_debug_file(json_data, buffer, end_idx)
-                                    return False
-
-                                parsed_json = json.loads(json_str)
-
-                                # Deduplikasi event
-                                parsed_json = self._filter_duplicate_events(parsed_json)
-
-                                # Jika setelah deduplikasi tidak ada event tersisa,
-                                # tetap simpan file agar ground station tahu chunk diterima
-                                # (dengan event_count = 0)
-
-                                # Simpan ke file dengan timestamp
-                                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                                filename = f"tdoa_{timestamp}.json"
-                                file_path = os.path.join(self.save_directory, filename)
-
-                                with open(file_path, "w", encoding="utf-8") as f:
-                                    json.dump(parsed_json, f, indent=2, ensure_ascii=False)
-
-                                elapsed = end_time - start_time
-                                self._log(f"✓ JSON received and saved to '{filename}'")
+                            if open_braces != close_braces:
                                 self._log(
-                                    f"  Events: {parsed_json.get('event_count', 0)} | "
-                                    f"Size: {len(json_data)} bytes"
+                                    f"[ERROR] Unbalanced braces: {{ {open_braces} vs }} {close_braces}"
                                 )
-                                self._log(f"  Time: {elapsed:.2f} seconds")
-
-                                if on_saved:
-                                    on_saved(file_path)  # path absolut agar caller bisa os.path.exists()
-
-                                return True
-
-                            except json.JSONDecodeError as e:
-                                self._log(f"✗ Invalid JSON format: {e}")
-                                self._save_debug_file(json_data, None, None)
+                                self._log("[ERROR] JSON incomplete or corrupted")
+                                self._save_debug_file(json_data, buffer, end_idx)
                                 return False
+
+                            if open_brackets != close_brackets:
+                                self._log(
+                                    f"[ERROR] Unbalanced brackets: [ {open_brackets} vs ] {close_brackets}"
+                                )
+                                self._log("[ERROR] JSON incomplete or corrupted")
+                                self._save_debug_file(json_data, buffer, end_idx)
+                                return False
+
+                            parsed_json = json.loads(json_str)
+
+                            # Deduplikasi event
+                            parsed_json = self._filter_duplicate_events(parsed_json)
+
+                            # Simpan ke file dengan timestamp
+                            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                            filename = f"tdoa_{timestamp}.json"
+                            file_path = os.path.join(self.save_directory, filename)
+
+                            with open(file_path, "w", encoding="utf-8") as f:
+                                json.dump(parsed_json, f, indent=2, ensure_ascii=False)
+
+                            elapsed = end_time - start_time
+                            self._log(f"✓ JSON received and saved to '{filename}'")
+                            self._log(
+                                f"  Events: {parsed_json.get('event_count', 0)} | "
+                                f"Size: {len(json_data)} bytes"
+                            )
+                            self._log(f"  Time: {elapsed:.2f} seconds")
+
+                            if on_saved:
+                                on_saved(file_path)  # path absolut agar caller bisa os.path.exists()
+
+                            return True
+
+                        except json.JSONDecodeError as e:
+                            self._log(f"✗ Invalid JSON format: {e}")
+                            self._save_debug_file(json_data, None, None)
+                            return False
 
                 time.sleep(0.1)
                 timeout_counter += 1

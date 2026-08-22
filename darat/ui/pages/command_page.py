@@ -31,8 +31,14 @@ class CommandPage(QWidget):
         self._navigate = navigate_callback
         self._rx_thread: threading.Thread | None = None
         self._is_recording = False
+        self._is_stopping = False
         self._last_json_file = None
         self._received_json_files: list[str] = []
+
+        # Watchdog timer jika drone tidak merespon STOP_REC
+        self._stop_watchdog_timer = QTimer(self)
+        self._stop_watchdog_timer.setSingleShot(True)
+        self._stop_watchdog_timer.timeout.connect(self._on_stop_watchdog_timeout)
 
         self._build_ui()
         self._update_ui_state()
@@ -42,7 +48,7 @@ class CommandPage(QWidget):
         self._poll_timer.timeout.connect(self._poll)
         self._poll_timer.start(1000)
 
-        # Hubungkan sinyal dari serial_bridge untuk menangkap balasan STATUS
+        # Hubungkan sinyal dari serial_bridge untuk menangkap balasan STATUS & konfirmasi STOP_REC
         self._serial.message_received.connect(self._on_serial_message)
 
         # Hubungkan signal internal untuk memproses hasil JSON secara thread-safe
@@ -189,12 +195,12 @@ class CommandPage(QWidget):
         self.connect_btn.setEnabled(not connected)
         self.disconnect_btn.setEnabled(connected)
         self.status_btn.setEnabled(connected)
-        self.start_rec_btn.setEnabled(connected and not self._is_recording)
-        self.stop_rec_btn.setEnabled(connected and self._is_recording)
+        self.start_rec_btn.setEnabled(connected and not self._is_recording and not self._is_stopping)
+        self.stop_rec_btn.setEnabled(connected and self._is_recording and not self._is_stopping)
         self.restart_drone_btn.setEnabled(connected)
 
         has_json = self._last_json_file is not None and os.path.exists(self._last_json_file)
-        self.process_btn.setEnabled(connected and has_json)
+        self.process_btn.setEnabled(connected and has_json and not self._is_stopping)
 
         # Update status bar
         if connected:
@@ -206,7 +212,10 @@ class CommandPage(QWidget):
             self.conn_indicator.setText("● DISCONNECTED")
             self.conn_indicator.setObjectName("statusError")
 
-        if self._is_recording:
+        if self._is_stopping:
+            self.rec_indicator.setText("● STOPPING (Draining...)")
+            self.rec_indicator.setObjectName("statusWarn")
+        elif self._is_recording:
             self.rec_indicator.setText("● RECORDING")
             self.rec_indicator.setObjectName("statusOk")
         else:
@@ -222,7 +231,7 @@ class CommandPage(QWidget):
         self._update_ui_state()
 
     def _on_serial_message(self, msg: str):
-        """Tangkap balasan dari drone, khusus untuk STATUS."""
+        """Tangkap balasan dari drone untuk STATUS dan konfirmasi STOP_REC."""
         # Asumsikan drone membalas dengan teks seperti "MIC=OK, SDR=OK, ..."
         # atau bisa juga "STATUS: ...", "OK:...", "ERROR:...", "IDLE", "RECORDING"
         if not msg:
@@ -234,7 +243,16 @@ class CommandPage(QWidget):
             # Tampilkan di panel status response
             self.status_response_text.append(f"> {msg.strip()}")
             self.status_response_text.ensureCursorVisible()
-        # Selain itu, biarkan log panel menangani (sudah tersambung)
+
+        # Deteksi konfirmasi selesainya stop_and_process dari drone saat STOPPING
+        if self._is_stopping:
+            stop_keywords = ["RECORDING STOPPED", "STOPPED AND PROCESSED", "TIDAK ADA RECORDING AKTIF"]
+            if any(sk in msg_upper for sk in stop_keywords) or (msg_upper.startswith("OK:") and "STOP" in msg_upper):
+                self._log(f"Drone confirmation received: {msg.strip()}", "INFO")
+                if self._stop_watchdog_timer.isActive():
+                    self._stop_watchdog_timer.stop()
+                # Beri jeda 500ms agar byte UART buffer selesai dibaca oleh JsonReceiver
+                QTimer.singleShot(500, self._finalize_stop_record)
 
     def _on_connect(self):
         self._log("Connecting to serial port...", "INFO")
@@ -250,11 +268,14 @@ class CommandPage(QWidget):
         parent = self.window()
         if hasattr(parent, '_do_disconnect_command'):
             parent._do_disconnect_command()
+        if self._stop_watchdog_timer.isActive():
+            self._stop_watchdog_timer.stop()
         # Hentikan thread JSON jika berjalan
         if self._rx_thread and self._rx_thread.is_alive():
             self._jr.stop_continuous()
             self._rx_thread.join(timeout=0.5)
         self._is_recording = False
+        self._is_stopping = False
         self._update_ui_state()
 
     def _on_restart_drone(self):
@@ -277,8 +298,8 @@ class CommandPage(QWidget):
         self._serial.send_command(CMD_STATUS)
 
     def _on_start_record(self):
-        if self._is_recording:
-            self._log("Already recording", "WARNING")
+        if self._is_recording or self._is_stopping:
+            self._log("Already recording or stopping", "WARNING")
             return
 
         parent = self.window()
@@ -286,6 +307,7 @@ class CommandPage(QWidget):
             parent._do_start_record_command()
 
         self._is_recording = True
+        self._is_stopping = False
         self._jr.reset()
         self._last_json_file = None
         self._received_json_files.clear()
@@ -337,24 +359,37 @@ class CommandPage(QWidget):
             self._log("Not recording", "WARNING")
             return
 
-        # 1. Kirim STOP_REC ke drone TERLEBIH DAHULU
-        #    supaya drone selesai memproses + mengirim chunk terakhir
+        if self._is_stopping:
+            self._log("Already stopping, awaiting drone confirmation...", "WARNING")
+            return
+
+        # 1. Masuk ke state STOPPING dan kunci UI
+        self._is_stopping = True
+        self._update_ui_state()
+
+        # 2. Kirim STOP_REC ke drone
         parent = self.window()
         if hasattr(parent, '_do_stop_record_command'):
             parent._do_stop_record_command()
 
-        # 2. Disable tombol agar tidak double-click selama draining
-        self.stop_rec_btn.setEnabled(False)
-        self._log("STOP_REC dikirim — menunggu transmisi terakhir dari drone (10 detik)...", "INFO")
+        self._log("STOP_REC dikirim — menunggu konfirmasi dan sisa data dari drone...", "INFO")
 
-        # 3. Beri grace period 10 detik sebelum hentikan receiver.
-        #    Ini agar JSON chunk terakhir yang dikirim drone sempat diterima.
-        QTimer.singleShot(10000, self._finalize_stop_record)
+        # 3. Pasang safety watchdog timer 60 detik sebagai fallback darurat
+        self._stop_watchdog_timer.start(60000)
+
+    def _on_stop_watchdog_timeout(self):
+        """Fallback jika drone tidak membalas dalam 60 detik."""
+        if self._is_stopping:
+            self._log("[WARNING] STOP_REC watchdog timeout (60s). Drone confirmation not received, forcing stop.", "WARNING")
+            self._finalize_stop_record()
 
     def _finalize_stop_record(self):
-        """Dipanggil setelah grace period — hentikan receiver dan update UI."""
+        """Dipanggil setelah drone mengonfirmasi atau watchdog timeout — hentikan receiver dan update UI."""
+        if self._stop_watchdog_timer.isActive():
+            self._stop_watchdog_timer.stop()
         self._jr.stop_continuous()
         self._is_recording = False
+        self._is_stopping = False
         self._log("Recording stopped (receiver selesai draining)", "INFO")
         self._update_ui_state()
 
