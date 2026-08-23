@@ -178,6 +178,24 @@ class TestJsonReceiver(unittest.TestCase):
             loaded = json.load(f)
         self.assertEqual(loaded["test"], "split_marker")
 
+    def test_message_forwarding_before_start_marker(self):
+        sample_data = {"test": "msg_fwd", "events": []}
+        json_bytes = json.dumps(sample_data).encode("utf-8")
+        packet = b"OK:Recording stopped and processed\n[START]\n" + json_bytes + b"\n[END]\n"
+
+        received_msgs = []
+        self.serial_manager.on_message_received = lambda msg: received_msgs.append(msg)
+
+        saved_files = []
+        def on_saved(fp):
+            saved_files.append(fp)
+
+        self.receiver._route_data(packet)
+        ok = self.receiver.receive_json(on_saved=on_saved, continuous=False)
+        self.assertTrue(ok)
+        self.assertEqual(len(saved_files), 1)
+        self.assertIn("OK:Recording stopped and processed", received_msgs)
+
 
 if __name__ == "__main__":
     unittest.main()

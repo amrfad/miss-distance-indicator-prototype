@@ -56,6 +56,7 @@ class JsonReceiver:
 
         # Internal buffer (diisi via _route_data yang didaftarkan ke file_transfer)
         self._json_buffer = bytearray()
+        self._buffer_lock = threading.Lock()
 
         # Continuous mode state
         self._stop_flag = threading.Event()
@@ -92,14 +93,17 @@ class JsonReceiver:
         with self._seen_lock:
             self._seen_session_events.clear()
             self._seen_legacy_keys.clear()
+        with self._buffer_lock:
+            self._json_buffer = bytearray()
 
     # ------------------------------------------------------------------
     # Internal data router (didaftarkan ke FileTransferManager)
     # ------------------------------------------------------------------
 
     def _route_data(self, raw_data: bytes):
-        """Terima data dari FileTransferManager dan simpan ke buffer internal."""
-        self._json_buffer.extend(raw_data)
+        """Terima data dari FileTransferManager dan simpan ke buffer internal secara thread-safe."""
+        with self._buffer_lock:
+            self._json_buffer.extend(raw_data)
 
     # ------------------------------------------------------------------
     # Deduplikasi helper
@@ -240,12 +244,15 @@ class JsonReceiver:
                 # Jika gagal tapi stop belum di-set, tunggu sebentar dan coba lagi
                 elif not self._stop_flag.is_set():
                     self._log("[RX] Menunggu paket berikutnya...")
-                    # Reset buffer untuk siap menerima transmisi berikutnya
-                    self._json_buffer = bytearray()
+                    # Jika buffer tidak mengandung [START], bersihkan secara thread-safe
+                    with self._buffer_lock:
+                        if b"[START]" not in self._json_buffer:
+                            self._json_buffer = bytearray()
 
         finally:
             self.file_transfer.clear_json_router()
-            self._json_buffer = bytearray()
+            with self._buffer_lock:
+                self._json_buffer = bytearray()
             self._log("[RX] Continuous JSON receiver stopped.")
 
         return any_success
@@ -271,7 +278,8 @@ class JsonReceiver:
             return False
         finally:
             self.file_transfer.clear_json_router()
-            self._json_buffer = bytearray()
+            with self._buffer_lock:
+                self._json_buffer = bytearray()
 
     def _receive_once_inner(self, on_saved=None) -> bool:
         """
@@ -291,35 +299,46 @@ class JsonReceiver:
             self._log("Waiting for JSON data...")
 
             while timeout_counter < max_timeout:
-                # Jika stop diminta di tengah tunggu, keluar
-                if self._stop_flag.is_set():
-                    self._log("[RX] Stop requested, aborting wait.")
+                # Jika stop diminta saat IDLE (tidak sedang menerima paket), keluar dengan bersih
+                if self._stop_flag.is_set() and not receiving:
+                    self._log("[RX] Stop requested (idle), exiting wait.")
                     return False
 
-                if len(self._json_buffer) > 0:
-                    data = bytes(self._json_buffer)
-                    buffer += data
-                    self._json_buffer = bytearray()
-                    timeout_counter = 0
+                with self._buffer_lock:
+                    if len(self._json_buffer) > 0:
+                        data = bytes(self._json_buffer)
+                        buffer += data
+                        self._json_buffer = bytearray()
+                        timeout_counter = 0
 
-                    self._log(
-                        f"[DEBUG] Received {len(data)} bytes, buffer total: {len(buffer)} bytes"
-                    )
+                        self._log(
+                            f"[DEBUG] Received {len(data)} bytes, buffer total: {len(buffer)} bytes"
+                        )
+
+                # Saat belum receiving: pisahkan text lines command response (misal OK:..., ERROR:...)
+                if not receiving:
+                    while b"\n" in buffer and (b"[START]" not in buffer or buffer.find(b"\n") < buffer.find(b"[START]")):
+                        line_bytes, buffer = buffer.split(b"\n", 1)
+                        line_str = line_bytes.decode("utf-8", errors="ignore").strip()
+                        if line_str:
+                            self._log(f"[RX-MSG] {line_str}")
+                            # Teruskan ke handler serial_manager agar signal message_received ter-emit ke GUI
+                            if hasattr(self.serial_manager, "on_message_received") and self.serial_manager.on_message_received:
+                                self.serial_manager.on_message_received(line_str)
 
                     # Cek START marker
-                    if not receiving:
-                        if b"[START]\n" in buffer:
-                            receiving = True
-                            start_time = time.time()
-                            start_idx = buffer.find(b"[START]\n")
-                            buffer = buffer[start_idx + len(b"[START]\n"):].lstrip(b"\n")
-                            self._log("[RX] [START] marker detected. Receiving JSON...")
-                            self._log(
-                                f"[DEBUG] Buffer after START (first 100 bytes): {repr(buffer[:100])}"
-                            )
-                        elif b"[START]" in buffer:
-                            # Marker belum lengkap dengan newline, tunggu chunk data berikutnya
-                            pass
+                    if b"[START]\n" in buffer:
+                        receiving = True
+                        start_time = time.time()
+                        start_idx = buffer.find(b"[START]\n")
+                        buffer = buffer[start_idx + len(b"[START]\n"):].lstrip(b"\n")
+                        self._log("[RX] [START] marker detected. Receiving JSON...")
+                        self._log(
+                            f"[DEBUG] Buffer after START (first 100 bytes): {repr(buffer[:100])}"
+                        )
+                    elif b"[START]" in buffer:
+                        # Marker belum lengkap dengan newline, tunggu chunk data berikutnya
+                        pass
 
                 # Cek END marker jika sedang receiving
                 if receiving:
@@ -340,10 +359,11 @@ class JsonReceiver:
 
                     if end_idx >= 0:
                         json_data = buffer[:end_idx].rstrip(b"\n")
-                        # Simpan sisa data setelah END marker untuk paket berikutnya
+                        # Simpan sisa data setelah END marker untuk paket berikutnya secara thread-safe
                         trailing_data = buffer[end_idx + end_marker_len:].lstrip(b"\n")
                         if trailing_data:
-                            self._json_buffer = bytearray(trailing_data) + self._json_buffer
+                            with self._buffer_lock:
+                                self._json_buffer = bytearray(trailing_data) + self._json_buffer
 
                         self._log(
                             f"[DEBUG] Processing JSON — [END] at position {end_idx}"

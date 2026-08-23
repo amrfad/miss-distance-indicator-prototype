@@ -166,7 +166,7 @@ class SerialManager:
                     raw_data = self.serial_port.read(self.serial_port.in_waiting)
                     if self.on_data_received:
                         self.on_data_received(raw_data)
-                time.sleep(0.1)  # Small delay to prevent excessive CPU usage
+                time.sleep(0.005)  # Fast polling to prevent UART FIFO buffer overrun
             except Exception as e:
                 if self.on_message_received:
                     self.on_message_received(f"Error reading serial data: {e}")
