@@ -45,7 +45,7 @@ class _ProcessWorker(QObject):
         entry = ssl_registry.get_method(self._method_key)
         method_display = entry.display_name if entry else self._method_key
 
-        self.progress.emit(f"Metode    : {method_display}")
+        self.progress.emit(f"Method    : {method_display}")
         self.progress.emit(f"Session ID: {data.get('session_id', 'N/A')}")
         self.progress.emit(f"Timestamp : {data.get('timestamp', 'N/A')}")
         self.progress.emit(f"Events    : {data.get('event_count', 0)}")
@@ -186,29 +186,29 @@ class ProcessPage(QWidget):
         btn_row.addWidget(refresh_btn)
         ll.addLayout(btn_row)
 
-        # ── GroupBox Metode SSL ──────────────────────────────────────────────
-        method_group = QGroupBox("Metode Kalkulasi TDOA")
+        # ── TDOA Method GroupBox ─────────────────────────────────────────────
+        method_group = QGroupBox("TDOA Calculation Method")
         mg_layout = QVBoxLayout(method_group)
         mg_layout.setContentsMargins(8, 8, 8, 8)
         mg_layout.setSpacing(6)
 
         self._method_combo = QComboBox()
         self._method_combo.setToolTip(
-            "Pilih algoritma untuk mengestimasi posisi sumber suara dari data TDOA"
+            "Select algorithm to estimate sound source position from TDOA data"
         )
         mg_layout.addWidget(self._method_combo)
 
         method_btn_row = QHBoxLayout()
 
-        refresh_method_btn = QPushButton("↻  Refresh Metode")
-        refresh_method_btn.setToolTip("Muat ulang daftar metode (setelah menambah custom method)")
+        refresh_method_btn = QPushButton("↻  Refresh Methods")
+        refresh_method_btn.setToolTip("Reload available calculation methods")
         refresh_method_btn.clicked.connect(self._on_refresh_methods)
         method_btn_row.addWidget(refresh_method_btn)
 
         add_method_btn = QPushButton("➕  Add Custom Method…")
         add_method_btn.setObjectName("btnSave")
         add_method_btn.setToolTip(
-            "Tambahkan file .py berisi fungsi solve() sebagai metode kustom"
+            "Add a .py file implementing solve() as a custom SSL method"
         )
         add_method_btn.clicked.connect(self._on_add_custom_method)
         method_btn_row.addWidget(add_method_btn)
@@ -387,21 +387,21 @@ class ProcessPage(QWidget):
         self.results_saved.emit(getattr(self, "_last_results_file", ""))
 
     def _on_refresh_methods(self):
-        """Muat ulang custom methods dari folder eksternal, lalu refresh dropdown."""
+        """Reload custom methods from external folder and refresh dropdown."""
         ssl_registry.reload_custom_methods(self._custom_folder)
         self._refresh_method_combo()
         count = len([k for k, e in ssl_registry._registry.items() if e.source == "custom"])
-        self.log_message.emit(f"Metode di-refresh: {count} custom method(s) dimuat.", "INFO")
-        self._append_log(f"[INFO] Registry di-refresh. {count} custom method(s) tersedia.")
+        self.log_message.emit(f"Methods refreshed: {count} custom method(s) loaded.", "INFO")
+        self._append_log(f"[INFO] Registry refreshed. {count} custom method(s) available.")
 
     def _on_add_custom_method(self):
         """
-        Buka file dialog, salin .py yang dipilih ke folder custom_ssl_methods,
-        lalu refresh registry dan dropdown.
+        Open file dialog, copy selected .py file to custom_ssl_methods folder,
+        and refresh registry and dropdown.
         """
         src, _ = QFileDialog.getOpenFileName(
             self,
-            "Pilih File Custom SSL Method",
+            "Select Custom SSL Method File",
             os.path.expanduser("~"),
             "Python Files (*.py)",
         )
@@ -410,13 +410,13 @@ class ProcessPage(QWidget):
 
         dst = os.path.join(self._custom_folder, os.path.basename(src))
 
-        # Konfirmasi jika file sudah ada
+        # Confirm if file already exists
         if os.path.exists(dst):
             reply = QMessageBox.question(
                 self,
-                "File Sudah Ada",
-                f"File '{os.path.basename(src)}' sudah ada di folder custom.\n"
-                "Timpa dengan file baru?",
+                "File Exists",
+                f"File '{os.path.basename(src)}' already exists in custom folder.\n"
+                "Overwrite with new file?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply != QMessageBox.StandardButton.Yes:
@@ -427,8 +427,8 @@ class ProcessPage(QWidget):
         except Exception as exc:
             QMessageBox.critical(
                 self,
-                "Gagal Menyalin",
-                f"Tidak dapat menyalin file:\n{exc}",
+                "Copy Failed",
+                f"Could not copy file:\n{exc}",
             )
             return
 
@@ -437,17 +437,17 @@ class ProcessPage(QWidget):
         self._refresh_method_combo()
 
         self.log_message.emit(
-            f"Custom method '{os.path.basename(src)}' berhasil ditambahkan.", "INFO"
+            f"Custom method '{os.path.basename(src)}' added successfully.", "INFO"
         )
         self._append_log(
-            f"[INFO] Custom method disalin ke: {dst}\n"
-            f"       Registry di-refresh — pilih metode dari dropdown."
+            f"[INFO] Custom method copied to: {dst}\n"
+            f"       Registry refreshed — select method from dropdown."
         )
 
         QMessageBox.information(
             self,
-            "Berhasil",
-            f"Custom method '{os.path.basename(src)}' berhasil ditambahkan!\n\n"
-            f"Lokasi: {dst}\n\n"
-            "Metode kini tersedia di dropdown.",
+            "Success",
+            f"Custom method '{os.path.basename(src)}' added successfully!\n\n"
+            f"Location: {dst}\n\n"
+            "Method is now available in dropdown.",
         )

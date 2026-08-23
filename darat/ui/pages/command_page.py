@@ -230,20 +230,19 @@ class CommandPage(QWidget):
         self._update_ui_state()
 
     def _check_device_connected(self) -> bool:
-        """Periksa apakah serial port terhubung. Jika tidak, tampilkan warning message modal."""
+        """Check if serial port is connected. If not, display warning modal."""
         if not self._serial.is_connected():
             QMessageBox.warning(
                 self,
-                "Perangkat Belum Tersambung",
-                "Perangkat drone belum tersambung ke port serial.\n\n"
-                "Silakan hubungkan kabel USB/Serial dan tekan tombol 'CONNECT' terlebih dahulu.",
+                "Device Disconnected",
+                "Serial device is not connected.\n\nPlease connect the USB/Serial cable and click CONNECT.",
                 QMessageBox.StandardButton.Ok
             )
             return False
         return True
 
     def _on_serial_message(self, msg: str):
-        """Tangkap balasan dari drone untuk STATUS dan konfirmasi STOP_REC."""
+        """Handle incoming drone status messages and STOP_REC confirmation."""
         if not msg:
             return
 
@@ -284,9 +283,8 @@ class CommandPage(QWidget):
             self._log("Connection failed: No serial device found", "ERROR")
             QMessageBox.warning(
                 self,
-                "Koneksi Gagal",
-                "Perangkat tidak ditemukan di port serial.\n\n"
-                "Pastikan kabel USB/Serial terpasang dengan baik dan driver sudah terinstall.",
+                "Connection Failed",
+                "No serial device detected.\n\nPlease check the cable connection and driver.",
                 QMessageBox.StandardButton.Ok
             )
         self._update_ui_state()
@@ -311,8 +309,7 @@ class CommandPage(QWidget):
         reply = QMessageBox.question(
             self,
             "Restart Drone",
-            "Apakah Anda yakin ingin me-restart kode drone di udara?\n"
-            "Semua proses perekaman yang sedang berjalan akan dihentikan.",
+            "Are you sure you want to restart the drone software?\nActive recording will be stopped.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
@@ -360,7 +357,7 @@ class CommandPage(QWidget):
         self._update_ui_state()
 
     def _on_json_saved_gui(self, filename: str):
-        """Dipanggil di thread GUI saat file JSON berhasil disimpan."""
+        """Called on GUI thread when JSON file is saved successfully."""
         parent = self.window()
         self._last_json_file = filename
 
@@ -408,7 +405,7 @@ class CommandPage(QWidget):
         if hasattr(parent, '_do_stop_record_command'):
             parent._do_stop_record_command()
 
-        self._log("STOP_REC dikirim — menunggu konfirmasi dan sisa data dari drone...", "INFO")
+        self._log("STOP_REC sent — awaiting drone confirmation and data...", "INFO")
         self._stop_watchdog_timer.start(60000)
 
     def _on_stop_watchdog_timeout(self):
@@ -422,15 +419,15 @@ class CommandPage(QWidget):
         self._jr.stop_continuous()
         self._is_recording = False
         self._is_stopping = False
-        self._log("Recording stopped (receiver selesai draining)", "INFO")
+        self._log("Recording stopped (receiver finished draining)", "INFO")
         self._update_ui_state()
 
     def _on_process_data(self):
         if not self._last_json_file or not os.path.exists(self._last_json_file):
             QMessageBox.warning(
                 self,
-                "Data Belum Tersedia",
-                "Belum ada file JSON hasil perekaman yang diterima untuk diproses.",
+                "Data Unavailable",
+                "No recorded JSON file available for processing.",
                 QMessageBox.StandardButton.Ok
             )
             return

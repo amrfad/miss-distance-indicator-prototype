@@ -28,23 +28,23 @@ _FALLBACK_SCHEMAS = {
         "params": {
             "prop_decrease": {
                 "value": 1.0, "type": "float", "min": 0.0, "max": 1.0, "step": 0.1,
-                "description": "Proporsi pengurangan noise (0.0 = none, 1.0 = maximum)",
+                "description": "Noise reduction ratio (0.0 = none, 1.0 = maximum)",
             },
             "freq_mask_smooth_hz": {
                 "value": 100, "type": "int", "min": 10, "max": 2000, "step": 10,
-                "description": "Smoothing di domain frekuensi (Hz)",
+                "description": "Frequency domain smoothing (Hz)",
             },
             "time_mask_smooth_ms": {
                 "value": 10, "type": "int", "min": 1, "max": 200, "step": 5,
-                "description": "Smoothing di domain waktu (ms)",
+                "description": "Time domain smoothing (ms)",
             },
             "stationary": {
                 "value": False, "type": "bool",
-                "description": "Gunakan model noise stasioner",
+                "description": "Use stationary noise model",
             },
             "normalize": {
                 "value": False, "type": "bool",
-                "description": "Normalisasi output audio",
+                "description": "Normalize audio output",
             },
         },
     },
@@ -138,7 +138,7 @@ class FilterConfigPanel(QWidget):
 
         self._method_combo = QComboBox()
         self._method_combo.setObjectName("filterMethodCombo")
-        self._method_combo.setToolTip("Pilih metode noise reduction untuk audio drone")
+        self._method_combo.setToolTip("Select noise reduction method for drone audio")
         self._populate_method_combo()
         self._method_combo.currentIndexChanged.connect(self._on_method_changed)
         method_row.addWidget(self._method_combo, stretch=1)
@@ -146,7 +146,7 @@ class FilterConfigPanel(QWidget):
         root.addLayout(method_row)
 
         # ── Dynamic Parameter Panel ───────────────────────────────────
-        self._param_group = QGroupBox("Parameter Metode")
+        self._param_group = QGroupBox("Method Parameters")
         self._param_group.setObjectName("filterParamGroup")
         self._param_layout = QFormLayout(self._param_group)
         self._param_layout.setSpacing(6)
@@ -155,11 +155,11 @@ class FilterConfigPanel(QWidget):
 
         root.addWidget(self._param_group)
 
-        # Render params untuk metode default
+        # Render params for default method
         self._render_params(self._current_method)
 
     def _populate_method_combo(self):
-        """Isi QComboBox dengan daftar metode dari schemas."""
+        """Populate QComboBox with method list from schemas."""
         self._method_combo.blockSignals(True)
         current_key = self._current_method
         self._method_combo.clear()
@@ -177,8 +177,8 @@ class FilterConfigPanel(QWidget):
         self._method_combo.blockSignals(False)
 
     def _render_params(self, method_key: str):
-        """Hapus form lama dan render form baru untuk metode yang dipilih."""
-        # Bersihkan layout lama
+        """Clear old form and render new form for selected method."""
+        # Clear old layout
         while self._param_layout.rowCount() > 0:
             self._param_layout.removeRow(0)
         self._param_widgets.clear()
@@ -187,14 +187,14 @@ class FilterConfigPanel(QWidget):
         params = schema.get("params", {})
 
         if not params:
-            empty_label = QLabel("Tidak ada parameter tambahan untuk metode ini.")
+            empty_label = QLabel("No additional parameters for this method.")
             empty_label.setStyleSheet("color: #64748b; font-style: italic;")
             self._param_layout.addRow(empty_label)
-            self._param_group.setTitle("Parameter Metode")
+            self._param_group.setTitle("Method Parameters")
             return
 
         display_name = schema.get("display_name", method_key)
-        self._param_group.setTitle(f"Parameter: {display_name}")
+        self._param_group.setTitle(f"Parameters: {display_name}")
 
         for param_name, param_info in params.items():
             widget = self._create_widget(param_info)
