@@ -7,13 +7,31 @@ background threads, enabling thread-safe UI updates.
 
 import json
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QThread, Signal
 
 from ...io.serial_manager import SerialManager
 from ...core.config import (
     CMD_SET_CONFIG, CONFIG_TX_START_MARKER, CONFIG_TX_END_MARKER,
 )
 from ...core.config_manager import get_global_config_manager
+
+
+class _ConnectWorker(QThread):
+    finished_signal = Signal(bool, str)
+
+    def __init__(self, bridge: "SerialBridge", port: str = ""):
+        super().__init__()
+        self._bridge = bridge
+        self._port = port
+
+    def run(self):
+        if self._port:
+            ok = self._bridge.connect_to_port(self._port)
+        else:
+            ok = self._bridge.connect_auto()
+        info = self._bridge.get_port_info()
+        port_name = info["port"] if (ok and info) else ""
+        self.finished_signal.emit(ok, port_name)
 
 
 class SerialBridge(QObject):
@@ -38,6 +56,7 @@ class SerialBridge(QObject):
         cfg = get_global_config_manager().get_config()
         self._manager = SerialManager(baud_rate=cfg.get("baud_rate", 230400))
         self._connected = False
+        self._connect_thread = None
 
         self._manager.set_callbacks(
             on_message=self._on_message,
@@ -62,7 +81,7 @@ class SerialBridge(QObject):
         return self._manager.get_port_info()
 
     def connect_auto(self) -> bool:
-        """Connect using the configured port and baud rate."""
+        """Connect using the configured port and baud rate (synchronous)."""
         cfg = get_global_config_manager().get_config()
         
         # Sync manager parameters with latest config
@@ -82,6 +101,28 @@ class SerialBridge(QObject):
         self.connection_changed.emit(success, port)
         return success
 
+    def connect_auto_async(self, callback=None):
+        """Connect asynchronously in a background QThread to prevent GUI freezing."""
+        if self._connect_thread is not None:
+            try:
+                if self._connect_thread.isRunning():
+                    return
+            except RuntimeError:
+                self._connect_thread = None
+
+        thread = _ConnectWorker(self, port="")
+        self._connect_thread = thread
+
+        def _cleanup():
+            if self._connect_thread is thread:
+                self._connect_thread = None
+            thread.deleteLater()
+
+        if callback:
+            thread.finished_signal.connect(callback)
+        thread.finished.connect(_cleanup)
+        thread.start()
+
     def connect_to_port(self, port: str) -> bool:
         cfg = get_global_config_manager().get_config()
         self._manager.baud_rate = cfg.get("baud_rate", 230400)
@@ -93,18 +134,47 @@ class SerialBridge(QObject):
         self.connection_changed.emit(success, port_name if success else "")
         return success
 
+    def connect_to_port_async(self, port: str, callback=None):
+        """Connect to a specific port asynchronously in a background QThread."""
+        if self._connect_thread is not None:
+            try:
+                if self._connect_thread.isRunning():
+                    return
+            except RuntimeError:
+                self._connect_thread = None
+
+        thread = _ConnectWorker(self, port=port)
+        self._connect_thread = thread
+
+        def _cleanup():
+            if self._connect_thread is thread:
+                self._connect_thread = None
+            thread.deleteLater()
+
+        if callback:
+            thread.finished_signal.connect(callback)
+        thread.finished.connect(_cleanup)
+        thread.start()
+
     def disconnect(self):
         self._manager.disconnect()
         self.connection_changed.emit(False, "")
 
     def send_command(self, command: str) -> bool:
         """Send a plain text command (e.g. 'START_REC') to the drone."""
+        if not self.is_connected():
+            self.message_received.emit("[ERROR] Serial not connected — cannot send command")
+            return False
         # Tambahkan newline agar readline() di drone langsung merespon seketika tanpa timeout
         cmd_to_send = f"{command}\n" if not command.endswith("\n") else command
-        result = self._manager.send_command(cmd_to_send)
-        if result:
-            self.command_sent.emit(command)
-        return result
+        try:
+            result = self._manager.send_command(cmd_to_send)
+            if result:
+                self.command_sent.emit(command)
+            return result
+        except Exception as exc:
+            self.message_received.emit(f"[ERROR] Failed to send serial command: {exc}")
+            return False
 
     def send_set_config(self, runtime_config: dict) -> bool:
         """Send SET_CONFIG payload via serial (Communication Contract § 5).

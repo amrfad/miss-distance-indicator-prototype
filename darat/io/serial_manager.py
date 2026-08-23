@@ -74,14 +74,14 @@ class SerialManager:
             # Get list of available serial ports
             ports = serial.tools.list_ports.comports()
 
-            # Filter out Bluetooth ports, prioritize USB serial ports
+            # Filter out Bluetooth ports, prioritize physical USB serial ports
             filtered_ports = [p for p in ports if not is_bluetooth_port(p)]
             usb_ports = [p for p in filtered_ports if is_usb_port(p)]
 
-            target_ports = usb_ports if usb_ports else (filtered_ports if filtered_ports else ports)
+            # Only target USB ports or non-Bluetooth physical ports to prevent 12-second Windows semaphore timeouts
+            target_ports = usb_ports if usb_ports else filtered_ports
 
             if target_ports:
-                # Use the first available USB / valid port
                 port_name = target_ports[0].device
                 self.serial_port = serial.Serial(
                     port_name, self.baud_rate, timeout=self.timeout
@@ -94,7 +94,7 @@ class SerialManager:
                 return True
             else:
                 if self.on_connection_status:
-                    self.on_connection_status("No serial ports found")
+                    self.on_connection_status("No USB serial ports found")
                 return False
 
         except Exception as e:
@@ -105,6 +105,14 @@ class SerialManager:
     def connect_to_port(self, port_name):
         """Connect to a specific serial port"""
         try:
+            # Fast check: verify port exists in available system ports before opening
+            ports = serial.tools.list_ports.comports()
+            available_devices = [p.device for p in ports]
+            if port_name not in available_devices:
+                if self.on_connection_status:
+                    self.on_connection_status(f"Port {port_name} not found in available system ports")
+                return False
+
             self.serial_port = serial.Serial(
                 port_name, self.baud_rate, timeout=self.timeout
             )

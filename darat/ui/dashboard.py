@@ -279,12 +279,9 @@ class MainDashboard(QMainWindow):
             btn.setChecked(True)
 
     # ========== Serial Actions (called from CommandPage) ==========
-    def _do_connect_command(self):
+    def _do_connect_command(self, callback=None):
         self._log.log("Connecting to serial port...", "INFO")
-        ok = self._serial_bridge.connect_auto()
-        if not ok:
-            self._log.log("Auto-connect failed.", "ERROR")
-        return ok
+        self._serial_bridge.connect_auto_async(callback=callback)
 
     def _do_disconnect_command(self):
         self._serial_bridge.disconnect()
@@ -367,6 +364,13 @@ class MainDashboard(QMainWindow):
             self._log.log(f"Config API not started: {exc}", "WARNING")
 
     def _on_ground_config_updated(self, data: dict):
+        if not data:
+            return
+        try:
+            self._config_manager.update(data)
+        except Exception as exc:
+            self._log.log(f"[CONFIG] Failed to update config manager: {exc}", "WARNING")
+
         if "raspi_ip" in data:
             self._rest_client.set_drone_ip(data["raspi_ip"])
             self._log.log(f"RestClient target IP updated: {data['raspi_ip']}", "INFO")

@@ -77,6 +77,7 @@ class TestLaptopConfigPanelSerialPort(unittest.TestCase):
         original_comports = serial.tools.list_ports.comports
         try:
             serial.tools.list_ports.comports = lambda: [bt_port, usb_port]
+            self.panel.serial_port.clear()
             self.panel._update_serial_port_selection("COM3")
 
             # Bluetooth port (COM4) should be filtered out by default unless targeted

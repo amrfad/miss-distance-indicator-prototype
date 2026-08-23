@@ -32,6 +32,7 @@ class CommandPage(QWidget):
         self._rx_thread: threading.Thread | None = None
         self._is_recording = False
         self._is_stopping = False
+        self._is_connecting = False
         self._last_json_file = None
         self._received_json_files: list[str] = []
 
@@ -107,31 +108,26 @@ class CommandPage(QWidget):
         self.start_rec_btn = QPushButton("● START REC")
         self.start_rec_btn.setObjectName("btnStart")
         self.start_rec_btn.setMinimumHeight(44)
-        self.start_rec_btn.setEnabled(False)
         self.start_rec_btn.clicked.connect(self._on_start_record)
 
         self.stop_rec_btn = QPushButton("■ STOP REC")
         self.stop_rec_btn.setObjectName("btnStop")
         self.stop_rec_btn.setMinimumHeight(44)
-        self.stop_rec_btn.setEnabled(False)
         self.stop_rec_btn.clicked.connect(self._on_stop_record)
 
         self.status_btn = QPushButton("STATUS")
         self.status_btn.setObjectName("btnPrimary")
         self.status_btn.setMinimumHeight(44)
-        self.status_btn.setEnabled(False)
         self.status_btn.clicked.connect(self._on_check_status)
 
         self.process_btn = QPushButton("PROCESS DATA")
         self.process_btn.setObjectName("btnSave")
         self.process_btn.setMinimumHeight(44)
-        self.process_btn.setEnabled(False)
         self.process_btn.clicked.connect(self._on_process_data)
 
         self.restart_drone_btn = QPushButton("RESTART DRONE")
         self.restart_drone_btn.setObjectName("btnReset")
         self.restart_drone_btn.setMinimumHeight(44)
-        self.restart_drone_btn.setEnabled(False)
         self.restart_drone_btn.clicked.connect(self._on_restart_drone)
 
         # Susun di grid 3x2
@@ -192,15 +188,18 @@ class CommandPage(QWidget):
         raw = self._serial.is_connected()
         connected = bool(raw) if raw is not None else False
 
-        self.connect_btn.setEnabled(not connected)
+        self.connect_btn.setEnabled(not connected and not self._is_connecting)
+        if not self._is_connecting:
+            self.connect_btn.setText("CONNECT")
+
         self.disconnect_btn.setEnabled(connected)
-        self.status_btn.setEnabled(connected)
-        self.start_rec_btn.setEnabled(connected and not self._is_recording and not self._is_stopping)
-        self.stop_rec_btn.setEnabled(connected and self._is_recording and not self._is_stopping)
-        self.restart_drone_btn.setEnabled(connected)
+        self.status_btn.setEnabled(True)
+        self.start_rec_btn.setEnabled(not self._is_recording and not self._is_stopping)
+        self.stop_rec_btn.setEnabled(self._is_recording and not self._is_stopping)
+        self.restart_drone_btn.setEnabled(True)
 
         has_json = self._last_json_file is not None and os.path.exists(self._last_json_file)
-        self.process_btn.setEnabled(connected and has_json and not self._is_stopping)
+        self.process_btn.setEnabled(has_json and not self._is_stopping)
 
         # Update status bar
         if connected:
@@ -230,38 +229,66 @@ class CommandPage(QWidget):
     def _poll(self):
         self._update_ui_state()
 
+    def _check_device_connected(self) -> bool:
+        """Periksa apakah serial port terhubung. Jika tidak, tampilkan warning message modal."""
+        if not self._serial.is_connected():
+            QMessageBox.warning(
+                self,
+                "Perangkat Belum Tersambung",
+                "Perangkat drone belum tersambung ke port serial.\n\n"
+                "Silakan hubungkan kabel USB/Serial dan tekan tombol 'CONNECT' terlebih dahulu.",
+                QMessageBox.StandardButton.Ok
+            )
+            return False
+        return True
+
     def _on_serial_message(self, msg: str):
         """Tangkap balasan dari drone untuk STATUS dan konfirmasi STOP_REC."""
-        # Asumsikan drone membalas dengan teks seperti "MIC=OK, SDR=OK, ..."
-        # atau bisa juga "STATUS: ...", "OK:...", "ERROR:...", "IDLE", "RECORDING"
         if not msg:
             return
 
         msg_upper = msg.upper()
         keywords = ["MIC", "SDR", "ZOOM", "OK:", "ERROR:", "IDLE", "RECORDING", "STATUS:"]
         if any(kw in msg_upper for kw in keywords):
-            # Tampilkan di panel status response
             self.status_response_text.append(f"> {msg.strip()}")
             self.status_response_text.ensureCursorVisible()
 
-        # Deteksi konfirmasi selesainya stop_and_process dari drone saat STOPPING
         if self._is_stopping:
             stop_keywords = ["RECORDING STOPPED", "STOPPED AND PROCESSED", "TIDAK ADA RECORDING AKTIF"]
             if any(sk in msg_upper for sk in stop_keywords) or (msg_upper.startswith("OK:") and "STOP" in msg_upper):
                 self._log(f"Drone confirmation received: {msg.strip()}", "INFO")
                 if self._stop_watchdog_timer.isActive():
                     self._stop_watchdog_timer.stop()
-                # Beri jeda 500ms agar byte UART buffer selesai dibaca oleh JsonReceiver
                 QTimer.singleShot(500, self._finalize_stop_record)
 
     def _on_connect(self):
+        if self._is_connecting:
+            return
+        self._is_connecting = True
+        self.connect_btn.setEnabled(False)
+        self.connect_btn.setText("CONNECTING...")
         self._log("Connecting to serial port...", "INFO")
+
         parent = self.window()
         if hasattr(parent, '_do_connect_command'):
-            ok = parent._do_connect_command()
-            self._log("Connected" if ok else "Connection failed", "INFO" if ok else "ERROR")
+            parent._do_connect_command(callback=self._on_connect_finished)
         else:
-            self._log("Cannot connect: parent dashboard missing", "ERROR")
+            self._serial.connect_auto_async(callback=self._on_connect_finished)
+
+    def _on_connect_finished(self, success: bool, port: str):
+        self._is_connecting = False
+        self.connect_btn.setText("CONNECT")
+        if success:
+            self._log(f"Connected to serial port ({port})", "INFO")
+        else:
+            self._log("Connection failed: No serial device found", "ERROR")
+            QMessageBox.warning(
+                self,
+                "Koneksi Gagal",
+                "Perangkat tidak ditemukan di port serial.\n\n"
+                "Pastikan kabel USB/Serial terpasang dengan baik dan driver sudah terinstall.",
+                QMessageBox.StandardButton.Ok
+            )
         self._update_ui_state()
 
     def _on_disconnect(self):
@@ -270,7 +297,6 @@ class CommandPage(QWidget):
             parent._do_disconnect_command()
         if self._stop_watchdog_timer.isActive():
             self._stop_watchdog_timer.stop()
-        # Hentikan thread JSON jika berjalan
         if self._rx_thread and self._rx_thread.is_alive():
             self._jr.stop_continuous()
             self._rx_thread.join(timeout=0.5)
@@ -279,6 +305,9 @@ class CommandPage(QWidget):
         self._update_ui_state()
 
     def _on_restart_drone(self):
+        if not self._check_device_connected():
+            return
+
         reply = QMessageBox.question(
             self,
             "Restart Drone",
@@ -292,12 +321,18 @@ class CommandPage(QWidget):
             self._serial.send_command(CMD_RESTART)
 
     def _on_check_status(self):
+        if not self._check_device_connected():
+            return
+
         self._log("Sending STATUS command to drone...", "INFO")
         self.status_response_text.clear()
         self.status_response_text.append("Requesting system status...")
         self._serial.send_command(CMD_STATUS)
 
     def _on_start_record(self):
+        if not self._check_device_connected():
+            return
+
         if self._is_recording or self._is_stopping:
             self._log("Already recording or stopping", "WARNING")
             return
@@ -355,6 +390,9 @@ class CommandPage(QWidget):
             self._update_ui_state()
 
     def _on_stop_record(self):
+        if not self._check_device_connected():
+            return
+
         if not self._is_recording:
             self._log("Not recording", "WARNING")
             return
@@ -363,28 +401,22 @@ class CommandPage(QWidget):
             self._log("Already stopping, awaiting drone confirmation...", "WARNING")
             return
 
-        # 1. Masuk ke state STOPPING dan kunci UI
         self._is_stopping = True
         self._update_ui_state()
 
-        # 2. Kirim STOP_REC ke drone
         parent = self.window()
         if hasattr(parent, '_do_stop_record_command'):
             parent._do_stop_record_command()
 
         self._log("STOP_REC dikirim — menunggu konfirmasi dan sisa data dari drone...", "INFO")
-
-        # 3. Pasang safety watchdog timer 60 detik sebagai fallback darurat
         self._stop_watchdog_timer.start(60000)
 
     def _on_stop_watchdog_timeout(self):
-        """Fallback jika drone tidak membalas dalam 60 detik."""
         if self._is_stopping:
             self._log("[WARNING] STOP_REC watchdog timeout (60s). Drone confirmation not received, forcing stop.", "WARNING")
             self._finalize_stop_record()
 
     def _finalize_stop_record(self):
-        """Dipanggil setelah drone mengonfirmasi atau watchdog timeout — hentikan receiver dan update UI."""
         if self._stop_watchdog_timer.isActive():
             self._stop_watchdog_timer.stop()
         self._jr.stop_continuous()
@@ -395,18 +427,22 @@ class CommandPage(QWidget):
 
     def _on_process_data(self):
         if not self._last_json_file or not os.path.exists(self._last_json_file):
-            self._log("No valid JSON file to process", "WARNING")
+            QMessageBox.warning(
+                self,
+                "Data Belum Tersedia",
+                "Belum ada file JSON hasil perekaman yang diterima untuk diproses.",
+                QMessageBox.StandardButton.Ok
+            )
             return
 
         self._log(f"Processing: {os.path.basename(self._last_json_file)}", "INFO")
         if self._navigate:
-            self._navigate(2)  # ProcessPage index (harus cocok dengan dashboard)
+            self._navigate(2)
 
         parent = self.window()
         if hasattr(parent, '_page_process'):
             process_page = parent._page_process
             process_page.set_working_dir(os.path.dirname(self._last_json_file))
-            # Panggil method untuk memproses file yang dipilih
             if hasattr(process_page, 'process_file'):
                 process_page.process_file(self._last_json_file)
             else:
