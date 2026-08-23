@@ -64,7 +64,7 @@ class LaptopConfigPanel(QWidget):
     config_reset_requested = Signal()
 
     _DEFAULTS = {
-        "serial_port": "COM3",
+        "serial_port": "AUTO",
         "baud_rate": 230400,
         "serial_timeout": 1.0,
         "raspi_ip": "10.99.99.2",
@@ -369,14 +369,14 @@ class LaptopConfigPanel(QWidget):
         elif self.serial_port.count() > 0:
             self.serial_port.setCurrentIndex(0)
         else:
-            self.serial_port.addItem("COM3", "COM3")
-            self.serial_port.setCurrentText("COM3")
+            self.serial_port.addItem("AUTO — Auto Detect USB", "AUTO")
+            self.serial_port.setCurrentText("AUTO — Auto Detect USB")
 
         self.serial_port.blockSignals(False)
 
     def _get_serial_port_value(self) -> str:
         if not hasattr(self, "serial_port"):
-            return "COM3"
+            return "AUTO"
         text = self.serial_port.currentText().strip()
         idx = self.serial_port.currentIndex()
         if idx >= 0:

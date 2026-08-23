@@ -88,11 +88,13 @@ class SerialBridge(QObject):
         self._manager.baud_rate = cfg.get("baud_rate", 230400)
         self._manager.timeout = cfg.get("serial_timeout", 1)
         
-        # Try to connect to configured port
-        port_to_try = cfg.get("serial_port", "COM3")  # This is the universal serial_port now
-        success = self._manager.connect_to_port(port_to_try)
+        # Try to connect to configured port if specified and not a Bluetooth port
+        port_to_try = cfg.get("serial_port", "")
+        success = False
+        if port_to_try and port_to_try.upper() != "AUTO":
+            success = self._manager.connect_to_port(port_to_try, allow_bluetooth=False)
         
-        # Fallback to auto-detect only if configured port fails
+        # Fallback to auto-detect USB serial ports if configured port was empty, AUTO, or Bluetooth
         if not success:
             success = self._manager.detect_and_connect()
             
@@ -128,7 +130,7 @@ class SerialBridge(QObject):
         self._manager.baud_rate = cfg.get("baud_rate", 230400)
         self._manager.timeout = cfg.get("serial_timeout", 1)
         
-        success = self._manager.connect_to_port(port)
+        success = self._manager.connect_to_port(port, allow_bluetooth=True)
         info = self._manager.get_port_info()
         port_name = info["port"] if info else port
         self.connection_changed.emit(success, port_name if success else "")

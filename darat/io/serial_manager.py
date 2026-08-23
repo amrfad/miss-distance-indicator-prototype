@@ -102,15 +102,21 @@ class SerialManager:
                 self.on_connection_status(f"Error connecting to serial port: {e}")
             return False
 
-    def connect_to_port(self, port_name):
+    def connect_to_port(self, port_name, allow_bluetooth=False):
         """Connect to a specific serial port"""
         try:
             # Fast check: verify port exists in available system ports before opening
             ports = serial.tools.list_ports.comports()
-            available_devices = [p.device for p in ports]
-            if port_name not in available_devices:
+            matching_port = next((p for p in ports if p.device == port_name), None)
+
+            if not matching_port:
                 if self.on_connection_status:
                     self.on_connection_status(f"Port {port_name} not found in available system ports")
+                return False
+
+            if is_bluetooth_port(matching_port) and not allow_bluetooth:
+                if self.on_connection_status:
+                    self.on_connection_status(f"Skipping Bluetooth port {port_name} to prevent system freeze")
                 return False
 
             self.serial_port = serial.Serial(
