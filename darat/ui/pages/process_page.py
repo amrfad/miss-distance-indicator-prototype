@@ -371,7 +371,6 @@ class ProcessPage(QWidget):
             self.log_message.emit(f"Results saved: {os.path.basename(out_file)}", "INFO")
             self._last_results_file = out_file
             self._view_viz_btn.setVisible(True)
-            self.results_saved.emit(out_file)
         except Exception as exc:
             self._append_log(f"ERROR saving results: {exc}")
             self.log_message.emit(f"Results save error: {exc}", "ERROR")
