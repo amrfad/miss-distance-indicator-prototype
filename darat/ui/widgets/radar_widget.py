@@ -6,21 +6,22 @@ Semua bidang menggunakan satu kelas canvas seragam:
 - 12 sektor (30° per sektor)
 - 4 ring konsentris dengan jarak proporsional
 - Label hanya pada 4 arah utama: sumbu positif dan negatif
-- Zoom bersama (XY/XZ/YZ sinkron): max_range 20 → 15 → 10 → 5 → 20m
+- Scroll wheel zoom (continuous) + hover tooltip koordinat event
+- Zoom bersama (XY/XZ/YZ sinkron)
 - Event: titik lingkaran kuning dengan label nomor
 - Gaya: hijau phosphor militer
 """
 
 import math
 
-from PySide6.QtCore import Qt, QPointF, QSize
+from PySide6.QtCore import Qt, QPointF, QSize, Signal
 from PySide6.QtGui import (
     QColor, QFont, QPainter, QPen, QBrush, QRadialGradient, QFontMetricsF,
     QPolygonF,
 )
 from PySide6.QtWidgets import (
     QWidget, QSizePolicy, QVBoxLayout, QHBoxLayout, QTabWidget,
-    QPushButton, QLabel,
+    QPushButton, QLabel, QToolTip,
 )
 
 from .mesh_loader import load_plane_mesh
@@ -41,6 +42,9 @@ _C_EVENT_OOB  = QColor("#ff6600")
 _RANGE_STEPS  = [5, 10, 15, 20]   # zoom in → index turun, zoom out → naik
 _RING_STEP_M  = 5.0                # jarak antar ring selalu 5m
 _NUM_SECTORS  = 12
+_ZOOM_MIN     = 2.5
+_ZOOM_MAX     = 50.0
+_ZOOM_STEP    = 2.5
 
 _TAB_STYLE = """
 QTabWidget::pane {
@@ -108,7 +112,13 @@ class _RadarCanvas(QWidget):
     horiz_key   : str   key dict event untuk sumbu horizontal (mis. "x")
     vert_label  : str   label sumbu vertikal (mis. "Y")
     vert_key    : str   key dict event untuk sumbu vertikal (mis. "y")
+
+    Signals
+    -------
+    range_changed(float)   — dikirim saat range berubah via scroll wheel
     """
+
+    range_changed = Signal(float)
 
     def __init__(self, horiz_label: str, horiz_key: str,
                  vert_label: str, vert_key: str, parent=None):
@@ -126,6 +136,10 @@ class _RadarCanvas(QWidget):
         self._max_range: float   = 20.0   # diatur dari luar via set_range()
         self._vertices, self._faces = load_plane_mesh()
 
+        # Cache projected event positions untuk tooltip
+        self._projected_events: list[tuple[QPointF, dict]] = []
+        self.setMouseTracking(True)
+
     # ── Public API ─────────────────────────────────────────────────────────
 
     def set_data(self, events: list[dict]):
@@ -137,11 +151,45 @@ class _RadarCanvas(QWidget):
         self.update()
 
     def set_range(self, max_range_m: float):
-        self._max_range = max_range_m
+        self._max_range = max(float(_ZOOM_MIN), min(float(_ZOOM_MAX), max_range_m))
         self.update()
 
     def sizeHint(self) -> QSize:
         return QSize(460, 460)
+
+    # ── Mouse Events ─────────────────────────────────────────────────────────
+
+    def wheelEvent(self, event):
+        """Scroll wheel: zoom continuous pada canvas ini."""
+        delta = event.angleDelta().y()
+        if delta > 0:
+            self._max_range = max(_ZOOM_MIN, self._max_range - _ZOOM_STEP)
+        else:
+            self._max_range = min(_ZOOM_MAX, self._max_range + _ZOOM_STEP)
+        self.range_changed.emit(self._max_range)
+        self.update()
+        event.accept()
+
+    def mouseMoveEvent(self, event):
+        """Hover tooltip: tampilkan koordinat event terdekat."""
+        if not self._projected_events:
+            return
+        pos = event.position()
+        THRESHOLD = 14.0
+        for sp, ev in self._projected_events:
+            dx = pos.x() - sp.x()
+            dy = pos.y() - sp.y()
+            if math.hypot(dx, dy) < THRESHOLD:
+                h = ev.get(self._horiz_key, 0.0)
+                v = ev.get(self._vert_key,  0.0)
+                num = ev.get("event_number", "?")
+                tip = (
+                    f"E{num}  {self._horiz_label}={h:.2f}m  "
+                    f"{self._vert_label}={v:.2f}m"
+                )
+                QToolTip.showText(event.globalPosition().toPoint(), tip, self)
+                return
+        QToolTip.hideText()
 
     # ── Geometri ────────────────────────────────────────────────────────────
 
@@ -190,30 +238,44 @@ class _RadarCanvas(QWidget):
         p.drawEllipse(center, radius, radius)
 
     def _draw_rings(self, p: QPainter, center: QPointF, radius: float):
-        """Gambar ring konsentris dengan jarak 5m, hingga max_range."""
+        """Gambar ring konsentris dengan jarak 5m, serta ring luar di max_range."""
         font = QFont("IBM Plex Mono", 7)
         p.setFont(font)
+        angle = math.radians(45)
 
+        # 1. Ring grid dalam (step 5m) — dim dotted
         ring_m = _RING_STEP_M
-        while ring_m <= self._max_range + 0.01:
+        while ring_m < self._max_range - 1.0:
             r_px = (ring_m / self._max_range) * radius
-            is_outer = abs(ring_m - self._max_range) < 0.01
 
-            pen = QPen(_C_GRID_MAJ if is_outer else _C_GRID)
-            pen.setWidthF(1.2 if is_outer else 0.7)
-            pen.setStyle(Qt.PenStyle.SolidLine if is_outer else Qt.PenStyle.DotLine)
+            pen = QPen(_C_GRID)
+            pen.setWidthF(0.7)
+            pen.setStyle(Qt.PenStyle.DotLine)
             p.setPen(pen)
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawEllipse(center, r_px, r_px)
 
             # Label jarak di arah 45° (kanan atas)
-            angle = math.radians(45)
             lx = center.x() + r_px * math.cos(angle) + 2
             ly = center.y() - r_px * math.sin(angle) - 2
             p.setPen(_C_TEXT_DIM)
             p.drawText(QPointF(lx, ly), f"{ring_m:.0f}m")
 
             ring_m += _RING_STEP_M
+
+        # 2. Ring terluar batas radar (outer ring) — SELALU menyala solid
+        pen = QPen(_C_GRID_MAJ)
+        pen.setWidthF(1.2)
+        pen.setStyle(Qt.PenStyle.SolidLine)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawEllipse(center, radius, radius)
+
+        # Label jarak ring terluar di arah 45°
+        lx = center.x() + radius * math.cos(angle) + 2
+        ly = center.y() - radius * math.sin(angle) - 2
+        p.setPen(_C_TEXT_DIM)
+        p.drawText(QPointF(lx, ly), f"{self._max_range:g}m")
 
     def _draw_sectors(self, p: QPainter, center: QPointF, radius: float):
         """Gambar 12 garis sektor dan label 4 sumbu (+H, -H, +V, -V)."""
@@ -304,6 +366,9 @@ class _RadarCanvas(QWidget):
             p.drawPolygon(poly)
 
     def _draw_events(self, p: QPainter, center: QPointF, radius: float):
+        # Reset cache tooltip setiap frame
+        self._projected_events = []
+
         if not self._events:
             font = QFont("IBM Plex Mono", 10)
             p.setFont(font)
@@ -338,6 +403,9 @@ class _RadarCanvas(QWidget):
 
             sp = self._world_to_screen(h_draw, v_draw, center, radius)
 
+            # Simpan untuk tooltip
+            self._projected_events.append((sp, ev))
+
             # Halo glow
             glow = QColor(color)
             glow.setAlpha(50)
@@ -360,12 +428,17 @@ class _RadarCanvas(QWidget):
 # ── RadarWidget Kontainer ─────────────────────────────────────────────────────
 
 class RadarWidget(QWidget):
-    """Widget radar 2D dengan sub-tab XY / XZ / YZ dan kontrol zoom bersama."""
+    """Widget radar 2D dengan sub-tab XY / XZ / YZ dan kontrol zoom bersama.
+
+    Zoom bisa melalui:
+    - Tombol +/− di bawah
+    - Scroll wheel langsung di canvas (continuous)
+    """
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("radarWidget")
-        self._range_idx = len(_RANGE_STEPS) - 1   # mulai dari 20m (index terakhir)
+        self._current_range: float = 20.0
         self._events: list[dict] = []
         self._build_ui()
 
@@ -383,6 +456,10 @@ class RadarWidget(QWidget):
         self._canvas_xy = _RadarCanvas("X", "x", "Y", "y")
         self._canvas_xz = _RadarCanvas("X", "x", "Z", "z")
         self._canvas_yz = _RadarCanvas("Y", "y", "Z", "z")
+
+        # Connect scroll-wheel signal dari setiap canvas
+        for canvas in (self._canvas_xy, self._canvas_xz, self._canvas_yz):
+            canvas.range_changed.connect(self._on_canvas_range_changed)
 
         self._tabs.addTab(self._canvas_xy, "  ◉ XY  ")
         self._tabs.addTab(self._canvas_xz, "  ◈ XZ  ")
@@ -405,13 +482,19 @@ class RadarWidget(QWidget):
         )
         zl.addWidget(lbl_range)
 
-        self._range_lbl = QLabel(f"{_RANGE_STEPS[self._range_idx]:.0f} m")
+        self._range_lbl = QLabel(f"{self._current_range:.0f} m")
         self._range_lbl.setStyleSheet(
             "color: #33cc33; font-family: 'IBM Plex Mono'; font-size: 10px;"
-            "font-weight: bold; min-width: 36px; border: none;"
+            "font-weight: bold; min-width: 40px; border: none;"
         )
         self._range_lbl.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         zl.addWidget(self._range_lbl)
+
+        hint_lbl = QLabel("scroll=zoom")
+        hint_lbl.setStyleSheet(
+            "color: #1a4a1a; font-family: 'IBM Plex Mono'; font-size: 8px; border: none;"
+        )
+        zl.addWidget(hint_lbl)
 
         zl.addStretch()
 
@@ -429,30 +512,32 @@ class RadarWidget(QWidget):
 
         root.addWidget(zoom_bar)
 
-        self._apply_range()
+        self._apply_range(self._current_range)
 
     # ── Zoom logic ──────────────────────────────────────────────────────────
 
     def _zoom_in(self):
-        """Perkecil range (zoom in): 20→15→10→5."""
-        if self._range_idx > 0:
-            self._range_idx -= 1
-            self._apply_range()
+        """Perkecil range via tombol (step 2.5m)."""
+        self._apply_range(max(_ZOOM_MIN, self._current_range - _ZOOM_STEP))
 
     def _zoom_out(self):
-        """Perbesar range (zoom out): 5→10→15→20."""
-        if self._range_idx < len(_RANGE_STEPS) - 1:
-            self._range_idx += 1
-            self._apply_range()
+        """Perbesar range via tombol (step 2.5m)."""
+        self._apply_range(min(_ZOOM_MAX, self._current_range + _ZOOM_STEP))
 
-    def _apply_range(self):
-        max_r = _RANGE_STEPS[self._range_idx]
-        self._range_lbl.setText(f"{max_r:.0f} m")
+    def _on_canvas_range_changed(self, new_range: float):
+        """Sinkronisasi range ke semua canvas saat scroll wheel di salah satu canvas."""
+        self._apply_range(new_range)
+
+    def _apply_range(self, max_r: float):
+        self._current_range = max(float(_ZOOM_MIN), min(float(_ZOOM_MAX), max_r))
+        self._range_lbl.setText(f"{self._current_range:.1f} m")
         for canvas in (self._canvas_xy, self._canvas_xz, self._canvas_yz):
-            canvas.set_range(max_r)
-        # Update tombol state
-        self._btn_zin.setEnabled(self._range_idx > 0)
-        self._btn_zout.setEnabled(self._range_idx < len(_RANGE_STEPS) - 1)
+            # Blok signal sementara agar tidak terjadi loop
+            canvas.blockSignals(True)
+            canvas.set_range(self._current_range)
+            canvas.blockSignals(False)
+        self._btn_zin.setEnabled(self._current_range > _ZOOM_MIN)
+        self._btn_zout.setEnabled(self._current_range < _ZOOM_MAX)
 
     # ── Public API ──────────────────────────────────────────────────────────
 
@@ -460,6 +545,10 @@ class RadarWidget(QWidget):
         self._events = events
         for canvas in (self._canvas_xy, self._canvas_xz, self._canvas_yz):
             canvas.set_data(events)
+
+    def set_range(self, max_range_m: float):
+        """Set range dari luar (misal dari auto-fit di visualize_page)."""
+        self._apply_range(max_range_m)
 
     def clear(self):
         self._events = []

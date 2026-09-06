@@ -6,6 +6,7 @@ Parser data tetap menggunakan parse_results_file() dari visualize_results.py.
 """
 
 import glob
+import math
 import os
 
 from PySide6.QtWidgets import (
@@ -78,6 +79,7 @@ class VisualizePage(QWidget):
 
         self._file_list = QListWidget()
         self._file_list.setAlternatingRowColors(True)
+        self._file_list.currentItemChanged.connect(self._on_file_selection_changed)
         ll.addWidget(self._file_list, stretch=1)
 
         self._file_count = QLabel("No result files found")
@@ -147,6 +149,11 @@ class VisualizePage(QWidget):
 
     # ── Slots ─────────────────────────────────────────────────────────────
 
+    def _on_file_selection_changed(self, current, _previous):
+        """Auto-visualize saat item berbeda dipilih di list."""
+        if current is not None:
+            self._visualize_selected()
+
     def _visualize_selected(self):
         path = self._get_selected_path()
         if not path:
@@ -175,9 +182,23 @@ class VisualizePage(QWidget):
 
         name = os.path.basename(path)
 
-        # Kirim data ke kedua widget native
+        # Auto-fit range: hitung max jarak horizontal event terluar + 20% margin
+        dists = [
+            math.hypot(e.get("x", 0.0), e.get("y", 0.0))
+            for e in valid
+        ]
+        if dists:
+            max_dist = max(dists)
+            # Bulatkan ke atas kelipatan 5m dengan margin 20%
+            auto_range = max(5.0, math.ceil(max_dist * 1.25 / 5) * 5)
+        else:
+            auto_range = 20.0
+
+        # Kirim data + range ke kedua widget native
         self._canvas_3d.set_data(events)
+        self._canvas_3d.set_range(auto_range)
         self._canvas_2d.set_data(events)
+        self._canvas_2d.set_range(auto_range)
 
         self._info_label.setText(
             f"Total: {len(events)}  |  Valid: {len(valid)}  |  Failed: {len(events) - len(valid)}"
