@@ -134,7 +134,7 @@ class _RadarCanvas(QWidget):
 
         self._events: list[dict] = []
         self._max_range: float   = 20.0   # diatur dari luar via set_range()
-        self._vertices, self._faces = load_plane_mesh()
+        self._vertices, self._faces, self._normals, self._face_types, self._centroids = load_plane_mesh()
 
         # Cache projected event positions untuk tooltip
         self._projected_events: list[tuple[QPointF, dict]] = []
@@ -333,7 +333,7 @@ class _RadarCanvas(QWidget):
         p.drawLine(QPointF(center.x(), center.y() - s), QPointF(center.x(), center.y() + s))
 
     def _draw_aircraft_mesh(self, p: QPainter, center: QPointF, radius: float):
-        """Draw the projected plane mesh wireframe on this 2D canvas."""
+        """Draw the projected plane mesh with tactical shading on this 2D canvas."""
         if not self._vertices or not self._faces:
             return
 
@@ -353,16 +353,54 @@ class _RadarCanvas(QWidget):
             sp = self._world_to_screen(h_val, v_val, center, radius)
             projected_pts.append(sp)
 
-        # Draw wireframe faces
-        pen = QPen(QColor(_C_CROSSHAIR.red(), _C_CROSSHAIR.green(), _C_CROSSHAIR.blue(), 180))
-        pen.setWidthF(0.8)
-        p.setPen(pen)
+        # Urutkan poligon berdasarkan sumbu kedalaman (depth axis)
+        used_keys = {self._horiz_key, self._vert_key}
+        depth_key = ({"x", "y", "z"} - used_keys).pop()
 
-        brush = QBrush(QColor(_C_CROSSHAIR.red(), _C_CROSSHAIR.green(), _C_CROSSHAIR.blue(), 15))
-        p.setBrush(brush)
+        faces_sorted = []
+        for idx, face in enumerate(self._faces):
+            c = self._centroids[idx]
+            d_val = get_val(c, depth_key)
+            ftype = self._face_types[idx]
+            faces_sorted.append((d_val, idx, face, ftype))
 
-        for face in self._faces:
+        faces_sorted.sort(key=lambda item: item[0])
+
+        # Render poligon 2D dengan styling material taktis
+        for _, face_idx, face, ftype in faces_sorted:
             poly = QPolygonF([projected_pts[idx] for idx in face])
+
+            if ftype == "canopy":
+                fill_c = QColor(10, 180, 230, 200)
+                edge_c = QColor(60, 230, 255, 230)
+                pen_w = 0.8
+            elif ftype == "exhaust":
+                fill_c = QColor(220, 130, 25, 200)
+                edge_c = QColor(255, 170, 40, 230)
+                pen_w = 0.8
+            elif ftype == "wings":
+                panel_var = (face_idx % 3) * 8
+                fill_c = QColor(
+                    max(0, 18 - panel_var // 2),
+                    min(255, 110 + panel_var),
+                    max(0, 22 - panel_var // 2),
+                    180,
+                )
+                edge_c = QColor(40, 170, 50, 150)
+                pen_w = 0.6
+            else:
+                panel_var = (face_idx % 2) * 6
+                fill_c = QColor(
+                    max(0, 14 - panel_var // 2),
+                    min(255, 80 + panel_var),
+                    max(0, 16 - panel_var // 2),
+                    190,
+                )
+                edge_c = QColor(30, 130, 40, 140)
+                pen_w = 0.6
+
+            p.setBrush(QBrush(fill_c))
+            p.setPen(QPen(edge_c, pen_w))
             p.drawPolygon(poly)
 
     def _draw_events(self, p: QPainter, center: QPointF, radius: float):

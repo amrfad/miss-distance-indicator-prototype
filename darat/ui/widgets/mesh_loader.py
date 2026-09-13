@@ -1,15 +1,55 @@
 # darat/ui/widgets/mesh_loader.py
 """
-MeshLoader — Parser for loading and scaling the aircraft mesh.
-Reads plane.ply, centers it, scales it, maps coordinates, and caches results.
+MeshLoader — Parser for loading, scaling, and pre-computing geometry metadata for the aircraft mesh.
+Reads plane.ply, centers it, scales it, maps coordinates, and pre-calculates face normals,
+material categories (canopy, wings, fuselage, exhaust), and centroids for high-performance 3D shading.
 """
 
+import math
 import os
 import struct
 from functools import lru_cache
 
+
+def _calc_normal(pts: list[tuple[float, float, float]]) -> tuple[float, float, float]:
+    """Calculate normalized normal vector using 3-point cross product."""
+    if len(pts) < 3:
+        return (0.0, 0.0, 1.0)
+    p0, p1, p2 = pts[0], pts[1], pts[2]
+    v1 = (p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2])
+    v2 = (p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2])
+    nx = v1[1] * v2[2] - v1[2] * v2[1]
+    ny = v1[2] * v2[0] - v1[0] * v2[2]
+    nz = v1[0] * v2[1] - v1[1] * v2[0]
+    length = math.hypot(nx, ny, nz)
+    if length > 1e-8:
+        return (nx / length, ny / length, nz / length)
+    return (0.0, 0.0, 1.0)
+
+
+def _classify_face(cx: float, cy: float, cz: float) -> str:
+    """Classify face into procedural tactical material type."""
+    # Canopy glass: upper front dorsal area
+    if 0.15 < cy < 0.75 and cz > 0.05 and abs(cx) < 0.22:
+        return "canopy"
+    # Wing panels: outer lateral wingspan
+    elif abs(cx) > 0.40:
+        return "wings"
+    # Engine exhaust / rear nozzle
+    elif cy < -0.85:
+        return "exhaust"
+    # Main fuselage composite skin
+    return "fuselage"
+
+
 @lru_cache(maxsize=1)
-def load_plane_mesh() -> tuple[list[tuple[float, float, float]], list[tuple[int, ...]]]:
+def load_plane_mesh() -> tuple[
+    list[tuple[float, float, float]],
+    list[tuple[int, ...]],
+    list[tuple[float, float, float]],
+    list[str],
+    list[tuple[float, float, float]],
+]:
     """
     Loads plane.ply, centers it, scales it to 3.19 meters wingspan,
     and maps coordinates to the widget coordinate system (rotated 180 degrees to face positive Y / North):
@@ -23,13 +63,17 @@ def load_plane_mesh() -> tuple[list[tuple[float, float, float]], list[tuple[int,
         List of pre-scaled 3D coordinates (xw, yw, zw) for each vertex.
     faces : list of tuple (int, ...)
         List of tuples of vertex indices defining each polygon face.
+    normals : list of tuple (float, float, float)
+        Normalized face normal vectors (nx, ny, nz).
+    face_types : list of str
+        Category string: 'canopy', 'wings', 'exhaust', or 'fuselage'.
+    centroids : list of tuple (float, float, float)
+        Pre-calculated center of each face (cx, cy, cz).
     """
     current_dir = os.path.dirname(os.path.abspath(__file__))
     ply_path = os.path.normpath(os.path.join(current_dir, "..", "..", "assets", "plane.ply"))
 
     # Fallback delta wing model in case file is missing or corrupted
-    # Coordinates in widget system: (xw, yw, zw)
-    # Nose (0, 1.5, 0), Tail base (0, -1.0, 0), Left wingtip (-1.6, -0.5, 0), Right wingtip (1.6, -0.5, 0), Tail fin top (0, -1.0, 0.5)
     fallback_vertices = [
         (0.0, 1.5, 0.0),      # 0: Nose
         (0.0, -1.0, 0.0),     # 1: Tail base
@@ -42,10 +86,23 @@ def load_plane_mesh() -> tuple[list[tuple[float, float, float]], list[tuple[int,
         (0, 1, 3),  # Right wing
         (1, 4, 0),  # Vertical tail fin
     ]
+    fallback_normals = [
+        _calc_normal([fallback_vertices[i] for i in face])
+        for face in fallback_faces
+    ]
+    fallback_types = ["wings", "wings", "canopy"]
+    fallback_centroids = [
+        (
+            sum(fallback_vertices[i][0] for i in face) / len(face),
+            sum(fallback_vertices[i][1] for i in face) / len(face),
+            sum(fallback_vertices[i][2] for i in face) / len(face),
+        )
+        for face in fallback_faces
+    ]
 
     if not os.path.exists(ply_path):
         print(f"Warning: plane.ply not found at {ply_path}. Using fallback delta wing.")
-        return fallback_vertices, fallback_faces
+        return fallback_vertices, fallback_faces, fallback_normals, fallback_types, fallback_centroids
 
     try:
         with open(ply_path, "rb") as f:
@@ -104,8 +161,8 @@ def load_plane_mesh() -> tuple[list[tuple[float, float, float]], list[tuple[int,
             scale = 3.19 / wingspan if wingspan > 0 else 1.0
 
             # Transform and map to widget coordinate system:
-            # xw = z_s (East-West)
-            # yw = x_s (North-South)
+            # xw = -z_s (East-West)
+            # yw = -x_s (North-South)
             # zw = y_s (Altitude)
             transformed_vertices = []
             for x, y, z in vertices:
@@ -114,8 +171,23 @@ def load_plane_mesh() -> tuple[list[tuple[float, float, float]], list[tuple[int,
                 z_c = (z - cz) * scale
                 transformed_vertices.append((-z_c, -x_c, y_c))
 
-            return transformed_vertices, faces
+            # Pre-compute face normals, centroids, and material classification
+            normals = []
+            centroids = []
+            face_types = []
+
+            for face in faces:
+                pts = [transformed_vertices[idx] for idx in face]
+                k = len(pts)
+                fcx = sum(p[0] for p in pts) / k
+                fcy = sum(p[1] for p in pts) / k
+                fcz = sum(p[2] for p in pts) / k
+                centroids.append((fcx, fcy, fcz))
+                normals.append(_calc_normal(pts))
+                face_types.append(_classify_face(fcx, fcy, fcz))
+
+            return transformed_vertices, faces, normals, face_types, centroids
 
     except Exception as e:
         print(f"Error loading plane.ply: {e}. Using fallback delta wing.")
-        return fallback_vertices, fallback_faces
+        return fallback_vertices, fallback_faces, fallback_normals, fallback_types, fallback_centroids

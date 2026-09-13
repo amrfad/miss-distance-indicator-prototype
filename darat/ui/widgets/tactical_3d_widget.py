@@ -158,8 +158,8 @@ class _IsoCanvas(QWidget):
         self._anim_timer.timeout.connect(self._on_anim_tick)
         self._anim_timer.start()
 
-        # Mesh pesawat
-        self._vertices, self._faces = load_plane_mesh()
+        # Mesh pesawat dengan metadata pencahayaan & kategori material
+        self._vertices, self._faces, self._normals, self._face_types, self._centroids = load_plane_mesh()
 
         # Mouse tracking untuk tooltip
         self.setMouseTracking(True)
@@ -576,22 +576,122 @@ class _IsoCanvas(QWidget):
             p.drawEllipse(origin, 3.5, 3.5)
             return
 
-        projected_pts = [self._project(v[0], v[1], v[2]) for v in self._vertices]
+        cx_scr, cy_scr, scale = self._get_params()
+        focal = self._max_range * 2.5
 
-        pen = QPen(QColor(_C_ACFT.red(), _C_ACFT.green(), _C_ACFT.blue(), 180))
-        pen.setWidthF(0.8)
-        p.setPen(pen)
-        brush = QBrush(QColor(_C_ACFT.red(), _C_ACFT.green(), _C_ACFT.blue(), 15))
-        p.setBrush(brush)
+        # 1. Rotasi semua vertex dan proyeksikan ke koordinat layar
+        proj_vertices = []
+        for v in self._vertices:
+            rx, ry, rz = _rotate_point(v[0], v[1], v[2], self._yaw, self._pitch, self._roll)
+            depth = max(0.1, ry + focal)
+            sx = cx_scr + (rx / depth) * focal * scale
+            sy = cy_scr - (rz / depth) * focal * scale
+            proj_vertices.append(QPointF(sx, sy))
 
-        for face in self._faces:
-            poly = QPolygonF([projected_pts[idx] for idx in face])
+        # Vektor pencahayaan taktis dalam ruang kamera (dari atas-depan kanan)
+        LX, LY, LZ = 0.35, -0.65, 0.68
+
+        # 2. Hitung rotasi normal, kedalaman centroid, dan intensitas pencahayaan per-face
+        faces_to_render = []
+        for idx, face in enumerate(self._faces):
+            c = self._centroids[idx]
+            _, c_ry, _ = _rotate_point(c[0], c[1], c[2], self._yaw, self._pitch, self._roll)
+
+            n = self._normals[idx]
+            n_rx, n_ry, n_rz = _rotate_point(n[0], n[1], n[2], self._yaw, self._pitch, self._roll)
+
+            # Two-sided lighting: balikkan normal jika menghadap menjauh dari kamera
+            if n_ry > 0:
+                n_rx, n_ry, n_rz = -n_rx, -n_ry, -n_rz
+
+            dot = n_rx * LX + n_ry * LY + n_rz * LZ
+            diffuse = max(0.0, dot)
+            intensity = 0.22 + 0.78 * diffuse
+
+            ftype = self._face_types[idx]
+            faces_to_render.append((c_ry, idx, face, ftype, intensity, diffuse))
+
+        # 3. Painter's Algorithm: urutkan dari yang terjauh ke terdekat (c_ry terbesar -> terkecil)
+        faces_to_render.sort(key=lambda item: item[0], reverse=True)
+
+        # 4. Render poligon dengan shader warna material & panel lines taktis
+        for _, face_idx, face, ftype, intensity, diffuse in faces_to_render:
+            poly = QPolygonF([proj_vertices[i] for i in face])
+
+            if ftype == "canopy":
+                # Kaca kokpit: aksen cyan neon futuristik dengan specular highlight
+                if diffuse > 0.72:
+                    fill_c = QColor(
+                        min(255, int(120 + 135 * intensity)),
+                        255,
+                        255,
+                        230,
+                    )
+                    edge_c = QColor(180, 255, 255, 240)
+                else:
+                    fill_c = QColor(
+                        int(10 + 40 * intensity),
+                        min(255, int(140 + 100 * intensity)),
+                        min(255, int(180 + 75 * intensity)),
+                        200,
+                    )
+                    edge_c = QColor(40, 220, 255, 210)
+                pen_w = 0.8
+
+            elif ftype == "exhaust":
+                # Nosel mesin / knalpot: aksen amber hangat / perunggu panas
+                fill_c = QColor(
+                    min(255, int(140 + 115 * intensity)),
+                    int(70 + 90 * intensity),
+                    int(15 + 30 * intensity),
+                    230,
+                )
+                edge_c = QColor(255, 170, 40, 220)
+                pen_w = 0.8
+
+            elif ftype == "wings":
+                # Panel sayap: warna komposit hijau taktis dengan variasi plat prosedural
+                panel_var = (face_idx % 3) * 6
+                fill_c = QColor(
+                    max(0, int(12 + 25 * intensity) - panel_var // 2),
+                    min(255, int(45 + 180 * intensity) + panel_var),
+                    max(0, int(12 + 30 * intensity) - panel_var // 2),
+                    225,
+                )
+                edge_c = QColor(
+                    int(15 + 35 * intensity),
+                    min(255, int(55 + 125 * intensity)),
+                    int(15 + 35 * intensity),
+                    180,
+                )
+                pen_w = 0.65
+
+            else:
+                # Badan pesawat (fuselage): stealth composite matte finish
+                panel_var = (face_idx % 2) * 5
+                fill_c = QColor(
+                    max(0, int(10 + 22 * intensity) - panel_var // 2),
+                    min(255, int(35 + 155 * intensity) + panel_var),
+                    max(0, int(10 + 25 * intensity) - panel_var // 2),
+                    235,
+                )
+                edge_c = QColor(
+                    int(12 + 30 * intensity),
+                    min(255, int(45 + 105 * intensity)),
+                    int(12 + 30 * intensity),
+                    170,
+                )
+                pen_w = 0.65
+
+            p.setBrush(QBrush(fill_c))
+            p.setPen(QPen(edge_c, pen_w))
             p.drawPolygon(poly)
 
+        # Indikator titik pusat (center of aircraft)
         origin = self._project(0, 0, 0)
-        p.setBrush(QBrush(_C_ACFT))
+        p.setBrush(QBrush(QColor("#55ff55")))
         p.setPen(Qt.PenStyle.NoPen)
-        p.drawEllipse(origin, 2.0, 2.0)
+        p.drawEllipse(origin, 2.5, 2.5)
 
     def _draw_hud(self, p: QPainter):
         font = QFont("IBM Plex Mono", 7)
