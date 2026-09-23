@@ -2,6 +2,7 @@
 """Command Page — Serial command control with status response panel."""
 
 import os
+import json
 import threading
 from datetime import datetime
 
@@ -13,6 +14,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Signal, Qt, QTimer
 
 from ...core.config import CMD_START_RECORD, CMD_STOP_RECORD, CMD_STATUS, CMD_RESTART
+from ...core.session_merger import merge_session_jsons
 
 
 class CommandPage(QWidget):
@@ -35,6 +37,7 @@ class CommandPage(QWidget):
         self._is_connecting = False
         self._last_json_file = None
         self._received_json_files: list[str] = []
+        self._session_chunk_files: list[str] = []
 
         # Watchdog timer jika drone tidak merespon STOP_REC
         self._stop_watchdog_timer = QTimer(self)
@@ -343,6 +346,7 @@ class CommandPage(QWidget):
         self._jr.reset()
         self._last_json_file = None
         self._received_json_files.clear()
+        self._session_chunk_files.clear()
         self.json_list_widget.clear()
         self.last_json_header.setText("LAST JSON RECEIVED (0):")
 
@@ -363,6 +367,8 @@ class CommandPage(QWidget):
 
         if filename not in self._received_json_files:
             self._received_json_files.insert(0, filename)
+        if filename not in self._session_chunk_files:
+            self._session_chunk_files.append(filename)
 
         basename = os.path.basename(filename)
         timestamp_str = datetime.now().strftime("%H:%M:%S")
@@ -420,6 +426,56 @@ class CommandPage(QWidget):
         self._is_recording = False
         self._is_stopping = False
         self._log("Recording stopped (receiver finished draining)", "INFO")
+
+        # Gabungkan semua chunk yang diterima selama sesi rekaman
+        if self._session_chunk_files:
+            save_dir = getattr(self._jr, "save_directory", None)
+            if not save_dir and self._session_chunk_files:
+                save_dir = os.path.dirname(self._session_chunk_files[0])
+            if not save_dir:
+                save_dir = os.getcwd()
+
+            try:
+                merged_path = merge_session_jsons(self._session_chunk_files, save_dir)
+                if merged_path and os.path.exists(merged_path):
+                    self._last_json_file = merged_path
+                    if merged_path not in self._received_json_files:
+                        self._received_json_files.insert(0, merged_path)
+
+                    ev_count = 0
+                    try:
+                        with open(merged_path, "r", encoding="utf-8") as f:
+                            merged_data = json.load(f)
+                            ev_count = merged_data.get("event_count", len(merged_data.get("events", [])))
+                    except Exception:
+                        pass
+
+                    merged_basename = os.path.basename(merged_path)
+                    timestamp_str = datetime.now().strftime("%H:%M:%S")
+                    item = QListWidgetItem(f"⭐  [{timestamp_str}]  {merged_basename} ({ev_count} Events)")
+                    item.setData(Qt.ItemDataRole.UserRole, merged_path)
+                    self.json_list_widget.insertItem(0, item)
+                    self.json_list_widget.setCurrentItem(item)
+                    self.json_list_widget.scrollToTop()
+
+                    count = len(self._received_json_files)
+                    self.last_json_header.setText(f"LAST JSON RECEIVED ({count}):")
+                    self._log(
+                        f"✓ Session JSON merged: {merged_basename} "
+                        f"({len(self._session_chunk_files)} chunk(s) -> {ev_count} event(s))",
+                        "INFO",
+                    )
+
+                    parent = self.window()
+                    if hasattr(parent, "_on_json_received"):
+                        parent._on_json_received(merged_path)
+                else:
+                    self._log("No valid events to merge from received chunks.", "WARNING")
+            except Exception as exc:
+                self._log(f"Failed to merge session JSONs: {exc}", "ERROR")
+        else:
+            self._log("No JSON data received during this recording session.", "INFO")
+
         self._update_ui_state()
 
     def _on_process_data(self):
