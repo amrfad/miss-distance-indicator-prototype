@@ -7,12 +7,14 @@ from .spectral_gating import SpectralGatingFilter
 from .wavelet_denoising import WaveletDenoisingFilter
 from .wiener_stft import WienerStftFilter
 from .passthrough import PassthroughFilter
+from .comb_notch import CombNotchFilter
 
 __all__ = [
     "SpectralGatingFilter",
     "WaveletDenoisingFilter",
     "WienerStftFilter",
     "PassthroughFilter",
+    "CombNotchFilter",
 ]
 
 # Registry nama ke class (digunakan oleh filter_registry.py)
@@ -21,4 +23,5 @@ BUILTIN_FILTER_MAP = {
     "wavelet_denoising": WaveletDenoisingFilter,
     "wiener_stft": WienerStftFilter,
     "passthrough": PassthroughFilter,
+    "comb_notch": CombNotchFilter,
 }

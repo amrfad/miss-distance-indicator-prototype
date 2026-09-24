@@ -98,6 +98,31 @@ _FALLBACK_SCHEMAS = {
         "display_name": "Passthrough (no filtering)",
         "params": {},
     },
+    "comb_notch": {
+        "display_name": "Comb-Notch & Wake Bandpass (Zero-Phase)",
+        "params": {
+            "rpm": {
+                "value": 4000.0, "type": "float", "min": 0.0, "max": 15000.0, "step": 100.0,
+                "description": "Putaran mesin drone (RPM) untuk estimasi frekuensi fundamental f0",
+            },
+            "notch_bw": {
+                "value": 40.0, "type": "float", "min": 5.0, "max": 200.0, "step": 5.0,
+                "description": "Lebar notch tiap harmonik mesin (Hz)",
+            },
+            "f_lo": {
+                "value": 1500.0, "type": "float", "min": 100.0, "max": 10000.0, "step": 100.0,
+                "description": "Frekuensi cut-off bawah bandpass (Hz)",
+            },
+            "f_hi": {
+                "value": 6000.0, "type": "float", "min": 1000.0, "max": 24000.0, "step": 200.0,
+                "description": "Frekuensi cut-off atas bandpass (Hz)",
+            },
+            "enable_bandpass": {
+                "value": True, "type": "bool",
+                "description": "Aktifkan ideal bandpass [f_lo, f_hi]",
+            },
+        },
+    },
 }
 
 

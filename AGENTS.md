@@ -284,7 +284,7 @@ Berikut adalah invariant sistem yang harus dipertahankan:
 | Cluster dipilih berdasarkan ukuran terbesar | `darat/localization/process_json_tdoa.py:process_event_tdoa()` |
 | JSON diterima hanya setelah `STOP_REC` command | `command_page.py:_stop_record()` |
 | File transfer menggunakan START/END marker | `darat/core/file_transfer.py`, `udara/drone_system/io/comms.py` |
-| Noise reduction menggunakan GCC-PHAT default | `darat/core/config.py:IS_GCC_PHAT = True` |
+| TDOA default menggunakan ECCCT (Envelope Cross-Correlation) | `udara/drone_system/core/config_manager.py:tdoa_method = "eccct"` |
 
 ---
 

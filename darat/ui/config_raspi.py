@@ -2,7 +2,7 @@
 """Raspberry Pi configuration panel — Blender/Unity property inspector style vertical layout."""
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QComboBox,
+    QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLineEdit, QComboBox,
     QStackedWidget, QListWidget, QSpinBox, QDoubleSpinBox,
     QPushButton, QCheckBox, QMessageBox, QLabel, QScrollArea, QFrame,
 )
@@ -16,7 +16,8 @@ _LABEL_W = 150
 _RESTART_REQUIRED = {
     "operation_mode", "serial_port", "baud_rate", "serial_timeout", "arecord_device",
     "sample_rate", "active_profile", "num_mics_h8", "base_output_dir",
-    "is_gcc_phat", "arecord_terminate_timeout",
+    "tdoa_method", "drone_rpm", "env_smooth_ms", "env_decimation", "do_closure_tuning",
+    "arecord_terminate_timeout",
     "events_csv", "events_json", "tdoa_json",
     "chunk_duration_sec", "chunk_overlap_sec",
 }
@@ -64,7 +65,11 @@ class RaspiConfigPanel(QWidget):
         "active_profile": "H8",
         "num_mics_h8": 6,
         "base_output_dir": "drone_recordings",
-        "is_gcc_phat": True,
+        "tdoa_method": "eccct",
+        "drone_rpm": 4000.0,
+        "env_smooth_ms": 2.0,
+        "env_decimation": 10,
+        "do_closure_tuning": True,
         "arecord_terminate_timeout": 3.0,
         "events_csv": "detected_events.csv",
         "events_json": "session_events.json",
@@ -273,24 +278,81 @@ class RaspiConfigPanel(QWidget):
         return sec
 
     def _group_tdoa(self) -> CollapsibleSection:
-        sec = CollapsibleSection("TDOA / GCC-PHAT")
+        sec = CollapsibleSection("TDOA ESTIMATION CONFIGURATION")
 
-        self.is_gcc_phat = QCheckBox("Enable GCC-PHAT algorithm")
-        sec.add_row(_lbl("GCC-PHAT:", restart=True), self.is_gcc_phat)
+        self.tdoa_method = QComboBox()
+        self.tdoa_method.setObjectName("monoField")
+        self.tdoa_method.addItem("ECCCT (Supersonic Envelope)", "eccct")
+        self.tdoa_method.addItem("GCC-PHAT (Classic)", "gcc_phat")
+        self.tdoa_method.addItem("Cross-Correlation (Standard)", "cross_correlation")
+        sec.add_row(_lbl("TDOA Method:", restart=True), self.tdoa_method)
+
+        # ── Parameter Khusus ECCCT (hanya muncul saat ECCCT dipilih) ──
+        self._eccct_container = QWidget()
+        eccct_layout = QFormLayout(self._eccct_container)
+        eccct_layout.setContentsMargins(0, 0, 0, 0)
+        eccct_layout.setSpacing(8)
+        eccct_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        eccct_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+
+        self.drone_rpm = QDoubleSpinBox()
+        self.drone_rpm.setObjectName("monoField")
+        self.drone_rpm.setRange(0.0, 15000.0)
+        self.drone_rpm.setSingleStep(100.0)
+        self.drone_rpm.setSuffix(" RPM")
+        eccct_layout.addRow(_lbl("Drone RPM:", restart=True, tooltip="Perkiraan RPM mesin drone untuk filter comb-notch"), self.drone_rpm)
+
+        self.env_smooth_ms = QDoubleSpinBox()
+        self.env_smooth_ms.setObjectName("monoField")
+        self.env_smooth_ms.setRange(0.5, 20.0)
+        self.env_smooth_ms.setSingleStep(0.5)
+        self.env_smooth_ms.setSuffix(" ms")
+        eccct_layout.addRow(_lbl("Envelope Smooth:", restart=True, tooltip="Lebar smoothing boxcar power envelope"), self.env_smooth_ms)
+
+        self.env_decimation = QSpinBox()
+        self.env_decimation.setObjectName("monoField")
+        self.env_decimation.setRange(1, 40)
+        self.env_decimation.setSingleStep(1)
+        self.env_decimation.setSuffix(" x")
+        eccct_layout.addRow(_lbl("Decimation:", restart=True, tooltip="Faktor desimasi kurva envelope (contoh: 10x: 48kHz -> 4.8kHz)"), self.env_decimation)
+
+        self.do_closure_tuning = QCheckBox("Enforce geometric closure consistency (Gauss-Seidel)")
+        eccct_layout.addRow(_lbl("Closure Tuning:", restart=True), self.do_closure_tuning)
+
+        sec.add_widget(self._eccct_container)
+
+        # ── Parameter Khusus GCC-PHAT (hanya muncul saat GCC-PHAT dipilih) ──
+        self._gcc_container = QWidget()
+        gcc_layout = QFormLayout(self._gcc_container)
+        gcc_layout.setContentsMargins(0, 0, 0, 0)
+        gcc_layout.setSpacing(8)
+        gcc_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        gcc_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
 
         self.hop_length = QSpinBox()
         self.hop_length.setObjectName("monoField")
         self.hop_length.setRange(64, 4096)
         self.hop_length.setSingleStep(64)
-        sec.add_row(_lbl("Hop Length:"), self.hop_length)
+        gcc_layout.addRow(_lbl("Hop Length:"), self.hop_length)
 
         self.frame_length = QSpinBox()
         self.frame_length.setObjectName("monoField")
         self.frame_length.setRange(128, 8192)
         self.frame_length.setSingleStep(128)
-        sec.add_row(_lbl("Frame Length:"), self.frame_length)
+        gcc_layout.addRow(_lbl("Frame Length:"), self.frame_length)
+
+        sec.add_widget(self._gcc_container)
+
+        # Hubungkan dynamic visibility saat pilihan TDOA berubah
+        self.tdoa_method.currentIndexChanged.connect(self._on_tdoa_method_changed)
+        self._on_tdoa_method_changed()
 
         return sec
+
+    def _on_tdoa_method_changed(self):
+        method = self.tdoa_method.currentData()
+        self._eccct_container.setVisible(method == "eccct")
+        self._gcc_container.setVisible(method == "gcc_phat")
 
     def _group_detection(self) -> CollapsibleSection:
         sec = CollapsibleSection("EVENT DETECTION")
@@ -422,7 +484,21 @@ class RaspiConfigPanel(QWidget):
         self.num_mics_h8.setValue(c.get("num_mics_h8", 6))
         self.arecord_device.setText(c.get("arecord_device", "hw:2,0"))
         self.arecord_terminate_timeout.setValue(c.get("arecord_terminate_timeout", 3.0))
-        self.is_gcc_phat.setChecked(c.get("is_gcc_phat", True))
+
+        # TDOA settings
+        t_method = c.get("tdoa_method", "eccct")
+        idx = self.tdoa_method.findData(t_method)
+        if idx >= 0:
+            self.tdoa_method.setCurrentIndex(idx)
+        else:
+            self.tdoa_method.setCurrentIndex(0)
+
+        self.drone_rpm.setValue(float(c.get("drone_rpm", 4000.0)))
+        self.env_smooth_ms.setValue(float(c.get("env_smooth_ms", 2.0)))
+        self.env_decimation.setValue(int(c.get("env_decimation", 10)))
+        self.do_closure_tuning.setChecked(bool(c.get("do_closure_tuning", True)))
+        self._on_tdoa_method_changed()
+
         self.serial_port.setText(c.get("serial_port", "/dev/ttyUSB0"))
         self.baud_rate.setCurrentText(str(c.get("baud_rate", 230400)))
         self.serial_timeout.setValue(c.get("serial_timeout", 5.0))
@@ -452,6 +528,7 @@ class RaspiConfigPanel(QWidget):
         self._restart_banner.setVisible(False)
 
     def _get_values_from_ui(self) -> dict:
+        chosen_tdoa_method = self.tdoa_method.currentData()
         base = {
             "operation_mode": self.operation_mode.currentText(),
             "active_profile": self.active_profile.currentText(),
@@ -460,7 +537,11 @@ class RaspiConfigPanel(QWidget):
             "num_mics_h8": self.num_mics_h8.value(),
             "arecord_device": self.arecord_device.text(),
             "arecord_terminate_timeout": self.arecord_terminate_timeout.value(),
-            "is_gcc_phat": self.is_gcc_phat.isChecked(),
+            "tdoa_method": chosen_tdoa_method,
+            "drone_rpm": self.drone_rpm.value(),
+            "env_smooth_ms": self.env_smooth_ms.value(),
+            "env_decimation": self.env_decimation.value(),
+            "do_closure_tuning": self.do_closure_tuning.isChecked(),
             "serial_port": self.serial_port.text(),
             "baud_rate": int(self.baud_rate.currentText()),
             "serial_timeout": self.serial_timeout.value(),

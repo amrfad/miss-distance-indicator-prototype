@@ -7,13 +7,13 @@ Type=simple
 User=root
 # Harus dijalankan sebagai root (agar network.py bisa set IP statis 10.99.99.2) 
 # tetapi path repository berada di folder user pi.
-WorkingDirectory=/home/pi/Documents/mdi-apps/udara
+WorkingDirectory=/home/pi/Documents/mdi-drone/udara
 
 # Menggunakan Python virtual environment secara langsung
-ExecStart=/home/pi/Documents/mdi-apps/udara/.venv/bin/python run_drone_system.py
+ExecStart=/home/pi/Documents/mdi-drone/udara/.venv/bin/python -u run_drone_system.py
 
 # Auto-Restart
-Restart=on-failure
+Restart=always
 RestartSec=5
 
 StandardOutput=journal

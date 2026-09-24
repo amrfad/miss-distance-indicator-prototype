@@ -62,13 +62,17 @@ Diakses melalui: **Tab Config → sub-tab Raspberry Pi**
 | `filter_method` | `spectral_gating` | String | 🔄 Runtime | Metode noise reduction yang digunakan. Pilihan bawaan: `spectral_gating`, `wiener_filter`. Metode kustom akan muncul setelah ditambahkan (lihat Bab 8). |
 | `filter_configs` | `{}` | Dict | 🔄 Runtime | Parameter spesifik per metode filter. Dikonfigurasi secara otomatis melalui panel Filter Method di GUI. |
 
-### Grup: TDOA / GCC-PHAT
-
-| Parameter | Default | Range | Status | Deskripsi |
+### Grup: TDOA & Estimasi
+ 
+| Parameter | Default | Range / Pilihan | Status | Deskripsi |
 |---|---|---|---|---|
-| `is_gcc_phat` | `True` | Boolean | ⚠ Restart | Aktifkan algoritma GCC-PHAT untuk perhitungan TDOA. Sangat direkomendasikan tetap `True` untuk akurasi optimal. |
-| `hop_length` | `512` | 64 – 4096 | 🔄 Runtime | Ukuran hop untuk analisis frame audio. Mempengaruhi resolusi waktu perhitungan TDOA. |
-| `frame_length` | `1024` | 128 – 8192 | 🔄 Runtime | Ukuran frame analisis. Harus ≥ 2 × `hop_length`. |
+| `tdoa_method` | `eccct` | `eccct`, `gcc_phat`, `cross_correlation` | ⚠ Restart | Algoritma estimasi TDOA. `eccct` optimal untuk proyektil supersonik, `gcc_phat` untuk akustik broadband standar. |
+| `drone_rpm` | `4000.0` | 0 – 15000 RPM | ⚠ Restart | RPM mesin/baling-baling drone untuk referensi frekuensi harmonik filter. |
+| `env_smooth_ms` | `2.0` | 0.5 – 20.0 ms | ⚠ Restart | Lebar jendela boxcar smoothing power envelope (ECCCT). |
+| `env_decimation` | `10` | 1 – 40 | ⚠ Restart | Faktor desimasi kurva envelope (ECCCT). |
+| `do_closure_tuning` | `True` | Boolean | ⚠ Restart | Koreksi siklik Gauss-Seidel untuk konsistensi segitiga TDOA (ECCCT). |
+| `hop_length` | `512` | 64 – 4096 | 🔄 Runtime | Ukuran hop untuk GCC-PHAT. |
+| `frame_length` | `1024` | 128 – 8192 | 🔄 Runtime | Ukuran frame analisis GCC-PHAT. Harus ≥ 2 × `hop_length`. |
 
 ### Grup: Serial & File Output
 
