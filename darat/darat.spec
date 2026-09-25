@@ -26,6 +26,7 @@ hiddenimports = [
     'darat.localization.builtin_ssl.pivot',
     'darat.localization.builtin_ssl.consensus',
     'darat.localization.builtin_ssl.density_consensus',
+    'darat.localization.builtin_ssl.rotating_multilat',
 
     # Submodul internal darat (Package namespace `darat.xxx`)
     'darat.api',

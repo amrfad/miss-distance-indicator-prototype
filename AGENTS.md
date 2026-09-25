@@ -285,6 +285,7 @@ Berikut adalah invariant sistem yang harus dipertahankan:
 | JSON diterima hanya setelah `STOP_REC` command | `command_page.py:_stop_record()` |
 | File transfer menggunakan START/END marker | `darat/core/file_transfer.py`, `udara/drone_system/io/comms.py` |
 | TDOA default menggunakan ECCCT (Envelope Cross-Correlation) | `udara/drone_system/core/config_manager.py:tdoa_method = "eccct"` |
+| Rotating Multilateration membutuhkan minimal 5 stasiun | `darat/localization/builtin_ssl/rotating_multilat.py:solve()` |
 
 ---
 
