@@ -186,9 +186,9 @@ class SerialManager:
                     self.on_message_received(f"Error reading serial data: {e}")
                 break
 
-    def is_connected(self):
+    def is_connected(self) -> bool:
         """Check if serial port is connected and open"""
-        return self.serial_port and self.serial_port.is_open
+        return bool(self.serial_port and self.serial_port.is_open)
 
     def get_port_info(self):
         """Get information about the connected port"""

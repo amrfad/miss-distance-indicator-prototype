@@ -72,7 +72,7 @@ class SerialBridge(QObject):
         return self._manager
 
     def is_connected(self) -> bool:
-        return self._manager.is_connected()
+        return bool(self._manager.is_connected())
 
     def get_available_ports(self) -> list[dict]:
         return self._manager.get_available_ports()

@@ -340,6 +340,10 @@ class GroundConfigManager:
         with self._lock:
             return dict(self._config["mic_positions"])
 
+    def get_mic_positions(self) -> dict:
+        """Alias untuk get_mic_positions_numpy() untuk kemudahan akses."""
+        return self.get_mic_positions_numpy()
+
     def update(self, changes: dict) -> dict:
         """
         Validasi dan apply perubahan secara atomic.

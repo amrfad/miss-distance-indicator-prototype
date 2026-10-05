@@ -22,6 +22,7 @@ from .pages.config_page import ConfigPage
 from .pages.command_page import CommandPage
 from .pages.process_page import ProcessPage
 from .pages.visualize_page import VisualizePage
+from .pages.calibration_page import CalibrationPage
 from .widgets.log_panel import LogPanel
 
 
@@ -34,6 +35,7 @@ class MainDashboard(QMainWindow):
     _PAGE_COMMAND = 1
     _PAGE_PROCESS = 2
     _PAGE_VISUALIZE = 3
+    _PAGE_CALIBRATE = 4
 
     def __init__(self):
         super().__init__()
@@ -191,6 +193,7 @@ class MainDashboard(QMainWindow):
             ("📡 COMMAND", self._PAGE_COMMAND),
             ("🔬 PROCESS", self._PAGE_PROCESS),
             ("📊 VISUALIZE", self._PAGE_VISUALIZE),
+            ("🔧 CALIBRATE", self._PAGE_CALIBRATE),
         ]
         for text, page_idx in nav_items:
             btn = QPushButton(text)
@@ -237,11 +240,18 @@ class MainDashboard(QMainWindow):
         )
         self._page_process = ProcessPage(working_dir=self._drone_save_dir)
         self._page_visualize = VisualizePage(working_dir=self._drone_save_dir)
+        self._page_calibration = CalibrationPage(
+            serial_bridge=self._serial_bridge,
+            json_receiver=self._json_receiver,
+            config_manager=self._config_manager,
+            parent=self,
+        )
 
         self._stack.addWidget(self._page_config)
         self._stack.addWidget(self._page_command)
         self._stack.addWidget(self._page_process)
         self._stack.addWidget(self._page_visualize)
+        self._stack.addWidget(self._page_calibration)
         content_splitter.addWidget(self._stack)
 
         self._log = LogPanel()
@@ -254,7 +264,8 @@ class MainDashboard(QMainWindow):
         self.log_signal.connect(self._log.log)
 
         for page in (self._page_config, self._page_command,
-                     self._page_process, self._page_visualize):
+                     self._page_process, self._page_visualize,
+                     self._page_calibration):
             if hasattr(page, "log_message"):
                 page.log_message.connect(self._log.log)
 
@@ -262,6 +273,9 @@ class MainDashboard(QMainWindow):
         self._page_config.apply_serial_requested.connect(self._apply_serial_config)
         self._rest_client.ground_config_updated.connect(self._on_ground_config_updated)
         self._page_process.results_saved.connect(self._on_results_saved)
+        self._page_calibration.mic_positions_updated.connect(
+            lambda d: self._log.log("Posisi mic Ground Station telah diperbarui melalui kalibrasi live.", "INFO")
+        )
 
         return container
 

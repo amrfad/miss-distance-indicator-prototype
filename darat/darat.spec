@@ -15,6 +15,7 @@ datas = [
     (os.path.join(darat_dir, 'ui', 'styles', 'mdi_theme.qss'), 'darat/ui/styles'),
     (os.path.join(darat_dir, 'ui', 'styles', 'icons'), 'darat/ui/styles/icons'),
     (os.path.join(darat_dir, 'config', 'ground_config_override.json'), 'config'),
+    (os.path.join(darat_dir, 'custom_ssl_methods'), 'custom_ssl_methods'),
     (os.path.join(darat_dir, 'README_CUSTOM_SSL.md'), '.'),
 ]
 
@@ -42,6 +43,7 @@ hiddenimports = [
     'darat.localization',
     'darat.localization.process_json_tdoa',
     'darat.localization.ssl_registry',
+    'darat.localization.calibration_engine',
     'darat.ui',
     'darat.ui.config_laptop',
     'darat.ui.config_raspi',
@@ -51,6 +53,7 @@ hiddenimports = [
     'darat.ui.pages.config_page',
     'darat.ui.pages.process_page',
     'darat.ui.pages.visualize_page',
+    'darat.ui.pages.calibration_page',
     'darat.ui.services',
     'darat.ui.services.rest_client',
     'darat.ui.services.serial_bridge',
@@ -61,6 +64,7 @@ hiddenimports = [
     'darat.ui.widgets.mesh_loader',
     'darat.ui.widgets.radar_widget',
     'darat.ui.widgets.tactical_3d_widget',
+    'darat.ui.widgets.session_list_widget',
     'darat.visualize_results',
 
     # Uvicorn, httptools, websockets
@@ -106,6 +110,8 @@ hiddenimports = [
     'serial.tools.list_ports',
 
     # Scientific
+    'scipy.spatial',
+    'scipy.spatial.distance',
     'scipy.spatial.transform._rotation_groups',
     'scipy.optimize',
 ]

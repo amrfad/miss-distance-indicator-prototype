@@ -31,11 +31,11 @@ def setup_windows(ip, prefix):
     adapter_name = result.stdout.strip()
     
     if not adapter_name:
-        print("[NETWORK] ❌ GAGAL: Tidak ditemukan adapter kabel yang sedang terhubung.")
+        print("[NETWORK] [FAIL] Tidak ditemukan adapter kabel yang sedang terhubung.")
         print("[NETWORK] TIPS: Pastikan PC Darat dan Raspberry Pi sudah dihubungkan dengan kabel LAN.")
         return False
         
-    print(f"[NETWORK] ✅ Ditemukan adapter kabel aktif: '{adapter_name}'")
+    print(f"[NETWORK] [OK] Ditemukan adapter kabel aktif: '{adapter_name}'")
     print(f"[NETWORK] Memasang IP {ip}/{prefix} ke '{adapter_name}'...")
     
     ps_set_cmd = f"""
@@ -50,13 +50,13 @@ def setup_windows(ip, prefix):
     try:
         res = subprocess.run(["powershell", "-Command", ps_set_cmd], capture_output=True, text=True)
         if res.returncode == 0:
-            print(f"[NETWORK] ✅ SUKSES: Windows sekarang memiliki IP {ip}!")
+            print(f"[NETWORK] [OK] SUKSES: Windows sekarang memiliki IP {ip}!")
             return True
         else:
-            print(f"[NETWORK] ❌ GAGAL mengatur IP. Response: {res.stderr}")
+            print(f"[NETWORK] [FAIL] GAGAL mengatur IP. Response: {res.stderr}")
             return False
     except Exception as e:
-        print(f"[NETWORK] ❌ Error saat menjalankan PowerShell: {e}")
+        print(f"[NETWORK] [FAIL] Error saat menjalankan PowerShell: {e}")
         return False
 
 def setup_linux(ip, prefix, interface="eth0"):
@@ -64,7 +64,7 @@ def setup_linux(ip, prefix, interface="eth0"):
     
     res = subprocess.run(["ip", "link", "show", interface], capture_output=True, text=True)
     if res.returncode != 0:
-        print(f"[NETWORK] ❌ GAGAL: Interface '{interface}' tidak ditemukan di sistem ini.")
+        print(f"[NETWORK] [FAIL] Interface '{interface}' tidak ditemukan di sistem ini.")
         return False
         
     print(f"[NETWORK] Memasang IP {ip}/{prefix} di '{interface}'...")
@@ -74,20 +74,20 @@ def setup_linux(ip, prefix, interface="eth0"):
         res_ip = subprocess.run(cmd.split(), capture_output=True, text=True)
         
         if res_ip.returncode != 0 and "File exists" not in res_ip.stderr:
-            print(f"[NETWORK] ❌ GAGAL menjalankan 'ip addr': {res_ip.stderr}")
+            print(f"[NETWORK] [FAIL] GAGAL menjalankan 'ip addr': {res_ip.stderr}")
             return False
             
         subprocess.run(["ip", "link", "set", interface, "up"], check=True)
-        print(f"[NETWORK] ✅ SUKSES: Linux sekarang memiliki IP {ip}!")
+        print(f"[NETWORK] [OK] SUKSES: Linux sekarang memiliki IP {ip}!")
         return True
     except Exception as e:
-        print(f"[NETWORK] ❌ Error saat mengeksekusi perintah ip: {e}")
+        print(f"[NETWORK] [FAIL] Error saat mengeksekusi perintah ip: {e}")
         return False
 
 def init_network():
     """Entry point untuk setup auto-network spesifik PC Darat."""
     if not is_admin():
-        print("[NETWORK] ⚠️ PERINGATAN: Program Ground darat/main.py tidak dijalankan sebagai Administrator.")
+        print("[NETWORK] [WARN] PERINGATAN: Program Ground darat/main.py tidak dijalankan sebagai Administrator.")
         print("[NETWORK] Automasi IP statis 10.99.99.1 dilewati. Pastikan PC menggunakan IP yang benar.\n")
         return False
 
@@ -98,5 +98,5 @@ def init_network():
     elif os_type == "Linux":
         return setup_linux(TARGET_IP, PREFIX)
     else:
-        print(f"[NETWORK] ⚠️ Automasi jaringan tidak didukung pada {os_type}.")
+        print(f"[NETWORK] [WARN] Automasi jaringan tidak didukung pada {os_type}.")
         return False
