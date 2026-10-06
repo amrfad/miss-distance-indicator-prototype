@@ -1,0 +1,615 @@
+/* ============================================================
+   MDI — Tactical Outdoor Ground Station Theme
+   Version: 3.1
+   Style: Modern Tactical Telemetry (High-Contrast Typography)
+   ============================================================ */
+
+/* ─────────────────────────────────────────────────────────────
+   GLOBAL
+───────────────────────────────────────────────────────────── */
+
+* {
+    font-family: "Inter", "Segoe UI", "Roboto", sans-serif;
+    font-size: 12px;
+    color: #172033;
+    background-color: transparent;
+    outline: none;
+}
+
+QMainWindow,
+QDialog,
+QWidget#centralWidget,
+QWidget#rootWidget {
+    background-color: #edf2f7;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   TYPOGRAPHY
+───────────────────────────────────────────────────────────── */
+
+QLabel {
+    color: #1e293b;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+QLabel#sectionTitle {
+    color: #172033;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+}
+
+QLabel#statusHeading {
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+}
+
+QLabel#statusValue {
+    color: #2563eb;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: "Inter", "Segoe UI", "Roboto", sans-serif;
+}
+
+QLabel#statusOk {
+    color: #16a34a;
+    font-weight: 600;
+}
+
+QLabel#statusWarn {
+    color: #f59e0b;
+    font-weight: 600;
+}
+
+QLabel#statusError {
+    color: #dc2626;
+    font-weight: 600;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   SIDEBAR
+───────────────────────────────────────────────────────────── */
+
+QFrame#sidebar {
+    background-color: #0b1220;
+    border-right: 1px solid #1e293b;
+}
+
+QLabel#sidebarTitle {
+    color: #f8fafc;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+
+QLabel#sidebarSubtitle {
+    color: #64748b;
+    font-size: 10px;
+    font-family: "Inter", "Segoe UI", "Roboto", sans-serif;
+    letter-spacing: 1px;
+}
+
+QLabel#sidebarDivider {
+    background-color: #1e293b;
+    max-height: 1px;
+    min-height: 1px;
+}
+
+QPushButton#navBtn {
+    background-color: transparent;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 14px;
+    color: #94a3b8;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+QPushButton#navBtn:hover {
+    background-color: #172033;
+    color: #ffffff;
+}
+
+QPushButton#navBtn:checked,
+QPushButton#navBtn:pressed {
+    background-color: #2563eb;
+    color: #ffffff;
+}
+
+QLabel#sidebarConnLabel {
+    color: #64748b;
+    font-size: 10px;
+    font-family: "Inter", "Segoe UI", "Roboto", sans-serif;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   HEADER
+───────────────────────────────────────────────────────────── */
+
+QWidget#headerPanel {
+    background-color: #ffffff;
+    border-bottom: 1px solid #dbe4ee;
+}
+
+QLabel#appTitle {
+    color: #2563eb;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+
+QLabel#appSubtitle {
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 1px;
+}
+
+QFrame#card,
+QFrame#cardAccent {
+    background-color: #ffffff;
+    border-radius: 10px;
+    border: 1px solid #dbe4ee;
+}
+
+QFrame#cardAccent {
+    border: 1px solid #2563eb;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   GROUP BOX
+───────────────────────────────────────────────────────────── */
+
+QGroupBox {
+    background-color: #ffffff;
+    border: 1px solid #dbe4ee;
+    border-radius: 8px;
+    margin-top: 16px;
+    padding: 16px 12px 12px 12px;
+    color: #334155;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 12px;
+    padding: 0 6px;
+    color: #2563eb;
+    background-color: #ffffff;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   TAB
+───────────────────────────────────────────────────────────── */
+
+QTabWidget::pane {
+    border: 1px solid #dbe4ee;
+    background-color: #ffffff;
+    border-radius: 8px;
+    top: -1px;
+}
+
+QTabBar::tab {
+    background-color: #e9eef5;
+    color: #475569;
+    padding: 8px 18px;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    margin-right: 2px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+QTabBar::tab:selected {
+    background-color: #ffffff;
+    color: #2563eb;
+}
+
+QTabBar::tab:hover {
+    background-color: #dbeafe;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   INPUTS
+───────────────────────────────────────────────────────────── */
+
+QLineEdit,
+QSpinBox,
+QDoubleSpinBox,
+QComboBox,
+QTextEdit,
+QPlainTextEdit {
+    background-color: #ffffff;
+    border: 1px solid #94a3b8;
+    border-radius: 6px;
+    padding: 7px 10px;
+    color: #172033;
+    font-size: 13px;
+    font-weight: 600;
+    selection-background-color: #bfdbfe;
+}
+
+QLineEdit:focus,
+QSpinBox:focus,
+QDoubleSpinBox:focus,
+QComboBox:focus,
+QTextEdit:focus {
+    border: 1px solid #2563eb;
+}
+
+QLineEdit[readOnly="true"],
+QTextEdit[readOnly="true"] {
+    background-color: #f8fafc;
+    color: #0f766e;
+    font-family: "Inter", "Segoe UI", "Roboto", sans-serif;
+}
+
+/* Font monospace KHUSUS field angka presisi (koordinat, IP, baud rate,
+   sample rate, timing, dll) — set objectName("monoField") di Python
+   pada widget yang relevan. JANGAN diterapkan ke semua input. */
+QLineEdit#monoField,
+QSpinBox#monoField,
+QDoubleSpinBox#monoField {
+    font-family: "Consolas", "Cascadia Mono", monospace;
+    font-weight: 600;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   COMBO BOX
+───────────────────────────────────────────────────────────── */
+
+QComboBox::drop-down {
+    width: 24px;
+    border-left: 1px solid #dbe4ee;
+    background-color: #f8fafc;
+}
+
+QComboBox::down-arrow {
+    image: url("icons/down_arrow_combo.png");
+    width: 10px;
+    height: 7px;
+    margin-right: 6px;
+}
+
+QComboBox QAbstractItemView {
+    background-color: #ffffff;
+    border: 1px solid #dbe4ee;
+    selection-background-color: #dbeafe;
+    color: #172033;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   SPIN BOX (up/down button hitbox)
+───────────────────────────────────────────────────────────── */
+
+/* Perbesar area klik tombol naik/turun supaya tidak sempit dan
+   tidak tumpang tindih dengan teks angka di sebelahnya. */
+QAbstractSpinBox::up-button,
+QAbstractSpinBox::down-button {
+    subcontrol-origin: border;
+    width: 20px;
+    background-color: #f8fafc;
+    border-left: 1px solid #dbe4ee;
+}
+
+QAbstractSpinBox::up-button {
+    subcontrol-position: top right;
+    border-top-right-radius: 5px;
+}
+
+QAbstractSpinBox::down-button {
+    subcontrol-position: bottom right;
+    border-bottom-right-radius: 5px;
+    border-top: 1px solid #dbe4ee;
+}
+
+QAbstractSpinBox::up-button:hover,
+QAbstractSpinBox::down-button:hover {
+    background-color: #e2e8f0;
+}
+
+QAbstractSpinBox::up-arrow {
+    image: url("icons/up_arrow.png");
+    width: 9px;
+    height: 6px;
+}
+
+QAbstractSpinBox::down-arrow {
+    image: url("icons/down_arrow.png");
+    width: 9px;
+    height: 6px;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   BUTTONS
+───────────────────────────────────────────────────────────── */
+
+QPushButton {
+    background-color: #f8fafc;
+    border: 1px solid #dbe4ee;
+    border-radius: 4px;
+    padding: 8px 16px;
+    color: #172033;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+QPushButton:hover {
+    background-color: #e2e8f0;
+}
+
+QPushButton:pressed {
+    background-color: #cbd5e1;
+}
+
+QPushButton:disabled {
+    background-color: #f1f5f9;
+    color: #94a3b8;
+    border-color: #e2e8f0;
+}
+
+/* PRIMARY */
+
+QPushButton#btnPrimary,
+QPushButton#btnConnect {
+    background-color: #2563eb;
+    border: none;
+    color: #ffffff;
+}
+
+QPushButton#btnPrimary:hover,
+QPushButton#btnConnect:hover {
+    background-color: #1d4ed8;
+}
+
+/* SUCCESS */
+
+QPushButton#btnSave,
+QPushButton#btnStart {
+    background-color: #16a34a;
+    border: none;
+    color: #ffffff;
+}
+
+QPushButton#btnSave:hover,
+QPushButton#btnStart:hover {
+    background-color: #15803d;
+}
+
+/* DANGER */
+
+QPushButton#btnStop {
+    background-color: #dc2626;
+    border: none;
+    color: #ffffff;
+}
+
+QPushButton#btnStop:hover {
+    background-color: #b91c1c;
+}
+
+/* WARNING */
+
+QPushButton#btnReset {
+    background-color: #f59e0b;
+    border: none;
+    color: #ffffff;
+}
+
+QPushButton#btnReset:hover {
+    background-color: #d97706;
+}
+
+/* SECONDARY */
+
+QPushButton#btnSecondary {
+    background-color: #e2e8f0;
+    border: 1px solid #cbd5e1;
+    color: #1e293b;
+}
+
+QPushButton#btnSecondary:hover {
+    background-color: #cbd5e1;
+    color: #0f172a;
+}
+
+
+/* ─────────────────────────────────────────────────────────────
+   CHECKBOX
+───────────────────────────────────────────────────────────── */
+
+QCheckBox {
+    spacing: 8px;
+    color: #334155;
+}
+
+QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    border: 1px solid #cbd5e1;
+    background-color: #ffffff;
+}
+
+QCheckBox::indicator:checked {
+    background-color: #2563eb;
+    border-color: #2563eb;
+    image: url("icons/check_mark.png");
+}
+
+/* ─────────────────────────────────────────────────────────────
+   LIST WIDGET
+───────────────────────────────────────────────────────────── */
+
+QListWidget {
+    background-color: #ffffff;
+    border: 1px solid #dbe4ee;
+    border-radius: 8px;
+    padding: 4px;
+}
+
+QListWidget::item {
+    padding: 8px;
+    border-radius: 4px;
+}
+
+QListWidget::item:selected {
+    background-color: #dbeafe;
+    color: #1d4ed8;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   CONFIG SIDEBAR (vertical tab ala Blender/Unity Properties)
+   Catatan: objectName "configSidebar" & "collapsibleHeader" ini
+   ASUMSI mengikuti penamaan yang diminta di prompt Antigravity
+   sebelumnya. Kalau implementasi Antigravity pakai objectName lain,
+   sesuaikan selector di bawah ini.
+───────────────────────────────────────────────────────────── */
+
+QListWidget#configSidebar {
+    background-color: #f8fafc;
+    border: 1px solid #dbe4ee;
+    border-radius: 4px;
+    padding: 4px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+QListWidget#configSidebar::item {
+    padding: 10px 12px;
+    border-radius: 3px;
+    color: #475569;
+}
+
+QListWidget#configSidebar::item:selected {
+    background-color: #2563eb;
+    color: #ffffff;
+}
+
+QListWidget#configSidebar::item:hover:!selected {
+    background-color: #e2e8f0;
+}
+
+QToolButton#collapsibleHeader {
+    background-color: #f1f5f9;
+    border: 1px solid #dbe4ee;
+    border-radius: 4px;
+    padding: 8px 10px;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    color: #1e293b;
+}
+
+QToolButton#collapsibleHeader:hover {
+    background-color: #e2e8f0;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   SCROLLBAR
+───────────────────────────────────────────────────────────── */
+
+QScrollBar:vertical {
+    background-color: transparent;
+    width: 8px;
+    margin: 2px;
+}
+
+QScrollBar::handle:vertical {
+    background-color: #94a3b8;
+    border-radius: 4px;
+    min-height: 24px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background-color: #64748b;
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+QScrollBar:horizontal {
+    background-color: transparent;
+    height: 8px;
+    margin: 2px;
+}
+
+QScrollBar::handle:horizontal {
+    background-color: #94a3b8;
+    border-radius: 4px;
+    min-width: 24px;
+}
+
+QScrollBar::handle:horizontal:hover {
+    background-color: #64748b;
+}
+
+QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal {
+    width: 0px;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   LOG CONSOLE
+───────────────────────────────────────────────────────────── */
+
+QTextEdit#logConsole {
+    background-color: #f8fafc;
+    border: 1px solid #dbe4ee;
+    border-radius: 8px;
+    padding: 8px;
+    color: #172033;
+    font-family: "Inter", "Segoe UI", "Roboto", sans-serif;
+    font-size: 11px;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   STATUS BAR
+───────────────────────────────────────────────────────────── */
+
+QStatusBar,
+QFrame#bottomBar {
+    background-color: #ffffff;
+    border-top: 1px solid #dbe4ee;
+    color: #64748b;
+    font-size: 11px;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   TOOLTIP
+───────────────────────────────────────────────────────────── */
+
+QToolTip {
+    background-color: #172033;
+    color: #ffffff;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 6px 10px;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   SPLITTER
+───────────────────────────────────────────────────────────── */
+
+QSplitter::handle {
+    background-color: #dbe4ee;
+}
+
+QSplitter::handle:horizontal {
+    width: 2px;
+}
+
+QSplitter::handle:vertical {
+    height: 2px;
+}

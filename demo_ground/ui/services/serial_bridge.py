@@ -1,0 +1,232 @@
+"""
+SerialBridge — Qt-native wrapper around SerialManager.
+
+Wraps darat.serial_manager.SerialManager to emit Qt signals from
+background threads, enabling thread-safe UI updates.
+"""
+
+import json
+
+from PySide6.QtCore import QObject, QThread, Signal
+
+from ...core.serial_manager import SerialManager
+from ...core.config import (
+    CMD_SET_CONFIG, CONFIG_TX_START_MARKER, CONFIG_TX_END_MARKER,
+)
+from ...core.config_manager import ConfigManager
+
+
+class _ConnectWorker(QThread):
+    finished_signal = Signal(bool, str)
+
+    def __init__(self, bridge: "SerialBridge", port: str = ""):
+        super().__init__()
+        self._bridge = bridge
+        self._port = port
+
+    def run(self):
+        if self._port:
+            ok = self._bridge.connect_to_port(self._port)
+        else:
+            ok = self._bridge.connect_auto()
+        info = self._bridge.get_port_info()
+        port_name = info["port"] if (ok and info) else ""
+        self.finished_signal.emit(ok, port_name)
+
+
+class SerialBridge(QObject):
+    """Qt signal bridge for SerialManager.
+
+    Signals are emitted from SerialManager's internal listener thread.
+    Qt auto-queues cross-thread signal-slot connections, so UI slots
+    connected here are always called on the GUI thread.
+    """
+
+    # Emitted when connection status changes (connected, port_name)
+    connection_changed = Signal(bool, str)
+    # Emitted for every log/status message from the serial layer
+    message_received   = Signal(str)
+    # Emitted when raw bytes arrive (forwarded to FileTransferManager)
+    data_received      = Signal(bytes)
+    # Emitted after a command is successfully written
+    command_sent       = Signal(str)
+
+    def __init__(self, config_manager=None, parent=None):
+        super().__init__(parent)
+        self._config_manager = config_manager or ConfigManager()
+        cfg = self._config_manager.get_all()
+        self._manager = SerialManager(baud_rate=int(cfg.get("baud_rate", 230400)))
+        self._connected = False
+        self._connect_thread = None
+
+        self._manager.set_callbacks(
+            on_message=self._on_message,
+            on_status=self._on_status,
+            on_data=self._on_data,
+        )
+
+    # ── Public API ──────────────────────────────────────────────────────
+
+    @property
+    def manager(self) -> SerialManager:
+        """Underlying SerialManager (for JsonReceiver / FileTransfer wiring)."""
+        return self._manager
+
+    def is_connected(self) -> bool:
+        return bool(self._manager.is_connected())
+
+    def get_available_ports(self) -> list[dict]:
+        return self._manager.get_available_ports()
+
+    def get_port_info(self) -> dict | None:
+        return self._manager.get_port_info()
+
+    def connect_auto(self) -> bool:
+        """Connect using the configured port and baud rate (synchronous)."""
+        cfg = self._config_manager.get_all()
+        
+        # Sync manager parameters with latest config
+        self._manager.baud_rate = int(cfg.get("baud_rate", 230400))
+        self._manager.timeout = float(cfg.get("serial_timeout", 1))
+        
+        # Try to connect to configured port if specified and not a Bluetooth port
+        port_to_try = cfg.get("serial_port", "")
+        success = False
+        if port_to_try and port_to_try.upper() != "AUTO":
+            success = self._manager.connect_to_port(port_to_try, allow_bluetooth=False)
+        
+        # Fallback to auto-detect USB serial ports if configured port was empty, AUTO, or Bluetooth
+        if not success:
+            success = self._manager.detect_and_connect()
+            
+        info = self._manager.get_port_info()
+        port = info["port"] if info else ""
+        self.connection_changed.emit(success, port)
+        return success
+
+    def connect_auto_async(self, callback=None):
+        """Connect asynchronously in a background QThread to prevent GUI freezing."""
+        if self._connect_thread is not None:
+            try:
+                if self._connect_thread.isRunning():
+                    return
+            except RuntimeError:
+                self._connect_thread = None
+
+        thread = _ConnectWorker(self, port="")
+        self._connect_thread = thread
+
+        def _cleanup():
+            if self._connect_thread is thread:
+                self._connect_thread = None
+            thread.deleteLater()
+
+        if callback:
+            thread.finished_signal.connect(callback)
+        thread.finished.connect(_cleanup)
+        thread.start()
+
+    def connect_to_port(self, port: str) -> bool:
+        cfg = self._config_manager.get_all()
+        self._manager.baud_rate = int(cfg.get("baud_rate", 230400))
+        self._manager.timeout = float(cfg.get("serial_timeout", 1))
+        
+        success = self._manager.connect_to_port(port, allow_bluetooth=True)
+        info = self._manager.get_port_info()
+        port_name = info["port"] if info else port
+        self.connection_changed.emit(success, port_name if success else "")
+        return success
+
+    def connect_to_port_async(self, port: str, callback=None):
+        """Connect to a specific port asynchronously in a background QThread."""
+        if self._connect_thread is not None:
+            try:
+                if self._connect_thread.isRunning():
+                    return
+            except RuntimeError:
+                self._connect_thread = None
+
+        thread = _ConnectWorker(self, port=port)
+        self._connect_thread = thread
+
+        def _cleanup():
+            if self._connect_thread is thread:
+                self._connect_thread = None
+            thread.deleteLater()
+
+        if callback:
+            thread.finished_signal.connect(callback)
+        thread.finished.connect(_cleanup)
+        thread.start()
+
+    def disconnect(self):
+        self._manager.disconnect()
+        self.connection_changed.emit(False, "")
+
+    def send_command(self, command: str) -> bool:
+        """Send a plain text command (e.g. 'START_REC') to the drone."""
+        if not self.is_connected():
+            self.message_received.emit("[ERROR] Serial not connected — cannot send command")
+            return False
+        # Tambahkan newline agar readline() di drone langsung merespon seketika tanpa timeout
+        cmd_to_send = f"{command}\n" if not command.endswith("\n") else command
+        try:
+            result = self._manager.send_command(cmd_to_send)
+            if result:
+                self.command_sent.emit(command)
+            return result
+        except Exception as exc:
+            self.message_received.emit(f"[ERROR] Failed to send serial command: {exc}")
+            return False
+
+    def send_set_config(self, runtime_config: dict) -> bool:
+        """Send SET_CONFIG payload via serial (Communication Contract § 5).
+
+        Format:
+            SET_CONFIG\\n
+            [CONFIG_START]\\n
+            {json}\\n
+            [CONFIG_END]\\n
+        """
+        if not self._manager.is_connected():
+            self.message_received.emit(
+                "[ERROR] Serial not connected — cannot send SET_CONFIG"
+            )
+            return False
+
+        sp = self._manager.serial_port
+        if sp is None or not sp.is_open:
+            self.message_received.emit("[ERROR] Serial port not open")
+            return False
+
+        try:
+            payload = json.dumps(runtime_config, ensure_ascii=False)
+            lines = [
+                f"{CMD_SET_CONFIG}\n",
+                f"{CONFIG_TX_START_MARKER}\n",
+                f"{payload}\n",
+                f"{CONFIG_TX_END_MARKER}\n",
+            ]
+            for line in lines:
+                sp.write(line.encode("utf-8"))
+
+            self.command_sent.emit(f"SET_CONFIG ({len(runtime_config)} params)")
+            self.message_received.emit(
+                f"[SET_CONFIG] Sent {len(runtime_config)} runtime params via serial"
+            )
+            return True
+
+        except Exception as exc:
+            self.message_received.emit(f"[ERROR] SET_CONFIG failed: {exc}")
+            return False
+
+    # ── Private callbacks (called from SerialManager's thread) ──────────
+
+    def _on_message(self, msg: str):
+        self.message_received.emit(msg)
+
+    def _on_status(self, msg: str):
+        self.message_received.emit(msg)
+
+    def _on_data(self, data: bytes):
+        self.data_received.emit(data)
