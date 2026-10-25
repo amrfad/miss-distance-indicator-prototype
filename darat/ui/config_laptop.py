@@ -64,6 +64,10 @@ class LaptopConfigPanel(QWidget):
     config_reset_requested = Signal()
 
     _DEFAULTS = {
+        "comm_backend": "SERIAL",
+        "sdr_ipc_port": 5005,
+        "sdr_mock_mode": False,
+        "sdr_python_path": r"D:\Software\Radioconda\python.exe",
         "serial_port": "AUTO",
         "baud_rate": 230400,
         "serial_timeout": 1.0,
@@ -128,7 +132,19 @@ class LaptopConfigPanel(QWidget):
         root.addWidget(action_bar, stretch=0)
 
     def _group_serial(self) -> CollapsibleSection:
-        sec = CollapsibleSection("SERIAL COMMUNICATION")
+        sec = CollapsibleSection("COMMUNICATION & TELEMETRY")
+
+        self.comm_backend = QComboBox()
+        self.comm_backend.setObjectName("monoField")
+        self.comm_backend.addItems(["SERIAL", "SDR"])
+        self.comm_backend.setToolTip("Pilih backend komunikasi: SERIAL (UART kabel) atau SDR (USRP B210)")
+        sec.add_row("Comm Mode:", self.comm_backend)
+
+        self.sdr_ipc_port = QSpinBox()
+        self.sdr_ipc_port.setObjectName("monoField")
+        self.sdr_ipc_port.setRange(1024, 65535)
+        self.sdr_ipc_port.setValue(5005)
+        sec.add_row("SDR IPC Port:", self.sdr_ipc_port)
 
         port_container = QWidget()
         port_layout = QHBoxLayout(port_container)
@@ -403,6 +419,10 @@ class LaptopConfigPanel(QWidget):
         self.current_config = merged
         c = self.current_config
 
+        if hasattr(self, "comm_backend"):
+            self.comm_backend.setCurrentText(str(c.get("comm_backend", "SERIAL")))
+        if hasattr(self, "sdr_ipc_port"):
+            self.sdr_ipc_port.setValue(int(c.get("sdr_ipc_port", 5005)))
         self._update_serial_port_selection(c.get("serial_port", "COM3"))
         self.baud_rate.setCurrentText(str(c.get("baud_rate", 230400)))
         self.serial_timeout.setValue(c.get("serial_timeout", 1.0))
@@ -421,6 +441,8 @@ class LaptopConfigPanel(QWidget):
 
     def _get_values_from_ui(self) -> dict:
         return {
+            "comm_backend": self.comm_backend.currentText() if hasattr(self, "comm_backend") else "SERIAL",
+            "sdr_ipc_port": self.sdr_ipc_port.value() if hasattr(self, "sdr_ipc_port") else 5005,
             "serial_port": self._get_serial_port_value(),
             "baud_rate": int(self.baud_rate.currentText()),
             "serial_timeout": self.serial_timeout.value(),

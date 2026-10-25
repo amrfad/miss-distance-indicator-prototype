@@ -242,8 +242,11 @@ def main():
     # Host dan port dibaca dari config_manager (api_host, api_port)
     start_api_thread(config_manager, audio_system)
 
-    if config_manager.get("operation_mode") == "ONLINE":
+    op_mode = config_manager.get("operation_mode")
+    if op_mode == "ONLINE":
         return run_online_mode(audio_system, config_manager)
+    elif op_mode == "SDR":
+        return run_sdr_mode(audio_system, config_manager)
     else:
         return run_offline_mode(audio_system, config_manager)
 
@@ -303,6 +306,83 @@ def run_online_mode(audio_system, config_manager=None):
         print("[SYSTEM] Shutdown complete")
     
     return 0
+
+
+
+
+def run_sdr_mode(audio_system, config_manager=None):
+    """
+    Run dalam SDR mode:
+    - Tidak membuka serial port /dev/ttyUSB0
+    - Menjalankan Air Unit LoRa FDD service
+    - Perintah START memicu audio_system.start_recording()
+    - Perintah STOP memicu audio_system.stop_and_process()
+    - Hasil chunk TDOA dipancarkan secara otomatis ke Ground
+    """
+    import os
+    from pathlib import Path
+    print("\n" + "=" * 60)
+    print("SDR MODE — USRP Full-Duplex LoRa Air Unit")
+    print("=" * 60)
+
+    sdr_root = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", "..", "sdr-mdi"))
+    if sdr_root not in sys.path:
+        sys.path.insert(0, sdr_root)
+
+    try:
+        from PyQt5 import QtCore
+        from air_unit.service import create_air_service
+        from radio.config import RadioConfig
+    except ImportError as e:
+        print(f"[FATAL] Gagal mengimpor modul SDR: {e}")
+        print("Pastikan GNU Radio dan PyQt5 terpasang di sistem drone.")
+        return 1
+
+    app = QtCore.QCoreApplication.instance() or QtCore.QCoreApplication(sys.argv)
+    radio_cfg = RadioConfig.load()
+    base_out = audio_system.base_output_dir or "drone_recordings"
+
+    def on_start():
+        print("[SDR COMMAND] Received START from Ground Station -> starting audio recording")
+        audio_system.start_recording()
+
+    def on_stop():
+        print("[SDR COMMAND] Received STOP from Ground Station -> stopping and processing audio")
+        audio_system.stop_and_process()
+
+    air_service = create_air_service(
+        input_file=None,
+        input_directory=Path(base_out),
+        tx_freq=radio_cfg.downlink_freq,
+        rx_freq=radio_cfg.uplink_freq,
+        rx_gain=radio_cfg.rx_gain,
+        tx_gain=radio_cfg.tx_gain,
+        encoding="smdi",
+        copy_count=radio_cfg.copies,
+        frames_per_burst=radio_cfg.frames_per_burst,
+        uplink_stale_seconds=radio_cfg.uplink_stale_seconds,
+        metrics_directory=Path("experiments"),
+        config=radio_cfg,
+        on_start_callback=on_start,
+        on_stop_callback=on_stop,
+    )
+
+    print("[SDR] Air Unit Service started. Listening for Ground Station BEACON/START...")
+    air_service.start()
+
+    keepalive = QtCore.QTimer()
+    keepalive.setInterval(500)
+    keepalive.timeout.connect(lambda: None)
+    keepalive.start()
+
+    try:
+        return app.exec_()
+    except KeyboardInterrupt:
+        print("\n[SDR] Shutting down Air Unit...")
+        if audio_system.recorder.is_recording():
+            audio_system.recorder.stop_recording()
+        air_service.shutdown()
+        return 0
 
 
 def run_offline_mode(audio_system, config_manager=None):

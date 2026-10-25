@@ -46,7 +46,12 @@ class MainDashboard(QMainWindow):
         self._config_manager = get_global_config_manager()
         cfg = self._config_manager.get_config()
 
-        self._serial_bridge = SerialBridge(self)
+        comm_backend = cfg.get("comm_backend", "SERIAL").upper()
+        if comm_backend == "SDR":
+            from .services.sdr_bridge import SdrBridge
+            self._serial_bridge = SdrBridge(self)
+        else:
+            self._serial_bridge = SerialBridge(self)
         self._rest_client = RestClient(
             drone_ip=cfg.get("raspi_ip", "10.99.99.2"),
             drone_port=int(cfg.get("drone_port", 5000)),
@@ -221,7 +226,7 @@ class MainDashboard(QMainWindow):
         self._stack = QStackedWidget()
 
         self._json_receiver = JsonReceiver(
-            serial_manager=self._serial_bridge.manager,
+            serial_manager=self._serial_bridge.manager if hasattr(self._serial_bridge, "manager") else None,
             file_transfer=self._file_transfer,
             log_callback=lambda msg: self.log_signal.emit(msg, "INFO"),
             save_directory=self._drone_save_dir,
@@ -239,6 +244,9 @@ class MainDashboard(QMainWindow):
             navigate_callback=self._navigate,
         )
         self._page_process = ProcessPage(working_dir=self._drone_save_dir)
+        if hasattr(self._serial_bridge, "json_saved"):
+            self._serial_bridge.json_saved.connect(self._page_command.json_saved.emit)
+            self._serial_bridge.json_saved.connect(self._on_json_received)
         self._page_visualize = VisualizePage(working_dir=self._drone_save_dir)
         self._page_calibration = CalibrationPage(
             serial_bridge=self._serial_bridge,
@@ -392,9 +400,11 @@ class MainDashboard(QMainWindow):
             self._rest_client.set_drone_port(data["drone_port"])
             self._log.log(f"RestClient target port updated: {data['drone_port']}", "INFO")
         if "baud_rate" in data:
-            self._serial_bridge.manager.baud_rate = int(data["baud_rate"])
+            if hasattr(self._serial_bridge, "manager") and self._serial_bridge.manager:
+                self._serial_bridge.manager.baud_rate = int(data["baud_rate"])
         if "serial_timeout" in data:
-            self._serial_bridge.manager.timeout = float(data["serial_timeout"])
+            if hasattr(self._serial_bridge, "manager") and self._serial_bridge.manager:
+                self._serial_bridge.manager.timeout = float(data["serial_timeout"])
         if "serial_port" in data:
             self._log.log(f"[CONFIG] Target serial port updated to: {data['serial_port']}", "INFO")
 

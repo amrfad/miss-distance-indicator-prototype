@@ -115,7 +115,7 @@ _PARAM_SCHEMA = [
     {
         "key": "operation_mode", "label": "Operation Mode",
         "description": "ONLINE menerima command via serial; OFFLINE via keyboard",
-        "type": "string", "default": "OFFLINE", "enum": ["ONLINE", "OFFLINE"],
+        "type": "string", "default": "OFFLINE", "enum": ["ONLINE", "OFFLINE", "SDR"],
         "category": "ground_only", "requires_restart": True, "unit": None,
     },
     {

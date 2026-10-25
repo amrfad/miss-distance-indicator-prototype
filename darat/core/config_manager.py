@@ -114,6 +114,36 @@ class UnknownParamError(ConfigError):
 
 _PARAM_SCHEMA = [
     {
+        "key": "comm_backend",
+        "label": "Communication Backend",
+        "description": "Backend komunikasi ground (SERIAL atau SDR)",
+        "type": "string",
+        "default": "SERIAL",
+        "enum": ["SERIAL", "SDR"],
+        "requires_restart": False,
+        "unit": None,
+    },
+    {
+        "key": "sdr_ipc_port",
+        "label": "SDR IPC Port",
+        "description": "Port TCP loopback untuk komunikasi dengan SDR daemon",
+        "type": "integer",
+        "default": 5005,
+        "min": 1024,
+        "max": 65535,
+        "requires_restart": False,
+        "unit": None,
+    },
+    {
+        "key": "sdr_mock_mode",
+        "label": "SDR Mock Mode",
+        "description": "Jalankan SDR daemon dalam mode simulasi (tanpa hardware USRP)",
+        "type": "boolean",
+        "default": False,
+        "requires_restart": False,
+        "unit": None,
+    },
+    {
         "key": "baud_rate",
         "label": "Baud Rate",
         "description": "Baud rate komunikasi serial; harus cocok dengan drone",
