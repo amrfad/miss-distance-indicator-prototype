@@ -349,6 +349,119 @@ def visualize_2d_projections(events, filename, mic_positions=None):
     return fig
 
 
+
+def visualize_2d_xy(events, filename, mic_positions=None):
+    """Visualisasi 2D bidang horizontal (XY) taktis / radar display dari hasil TDOA."""
+    import math
+    import numpy as np
+
+    valid_events = [e for e in events if e.get("valid", False)]
+    if not valid_events:
+        print("Tidak ada event valid untuk divisualisasikan.")
+        return None
+
+    pca_ev = min(
+        valid_events,
+        key=lambda e: math.hypot(e.get("x", 0.0), e.get("y", 0.0), e.get("z", 0.0)),
+    )
+    pca_num = pca_ev.get("event_number")
+
+    fig, ax = plt.subplots(figsize=(9, 9))
+    fig.patch.set_facecolor("#060d06")
+    ax.set_facecolor("#091409")
+
+    dists = [math.hypot(e["x"], e["y"]) for e in valid_events]
+    max_d = max(dists) if dists else 10.0
+    radar_range = max(10.0, math.ceil(max_d * 1.25 / 5.0) * 5.0)
+
+    for r in np.linspace(radar_range / 4, radar_range, 4):
+        circle = plt.Circle(
+            (0, 0),
+            r,
+            color="#236823" if r == radar_range else "#1a4a1a",
+            fill=False,
+            linestyle="-" if r == radar_range else "--",
+            linewidth=1.2 if r == radar_range else 0.8,
+        )
+        ax.add_patch(circle)
+        ax.text(
+            0.15,
+            r,
+            f"{r:.1f}m",
+            color="#33cc33",
+            fontsize=8,
+            fontfamily="monospace",
+            alpha=0.7,
+        )
+
+    for s in range(12):
+        rad = math.radians(s * 30)
+        ax.plot(
+            [0, radar_range * math.cos(rad)],
+            [0, radar_range * math.sin(rad)],
+            color="#236823" if s % 3 == 0 else "#143a14",
+            linewidth=1.0 if s % 3 == 0 else 0.6,
+        )
+
+    ax.text(0, radar_range * 1.04, "N (+Y)", color="#33cc33", ha="center", va="bottom", fontweight="bold")
+    ax.text(0, -radar_range * 1.04, "S (-Y)", color="#33cc33", ha="center", va="top", fontweight="bold")
+    ax.text(radar_range * 1.04, 0, "E (+X)", color="#33cc33", ha="left", va="center", fontweight="bold")
+    ax.text(-radar_range * 1.04, 0, "W (-X)", color="#33cc33", ha="right", va="center", fontweight="bold")
+
+    ax.plot([-radar_range * 0.05, radar_range * 0.05], [0, 0], color="#33cc33", linewidth=1.2)
+    ax.plot([0, 0], [-radar_range * 0.05, radar_range * 0.05], color="#33cc33", linewidth=1.2)
+
+    if mic_positions:
+        for m_name, pos in mic_positions.items():
+            ax.plot(pos[0], pos[1], marker="^", color="#3399ff", markersize=8)
+            ax.text(pos[0] + 0.1, pos[1] + 0.1, m_name, color="#3399ff", fontsize=8, fontweight="bold")
+
+    for ev in valid_events:
+        x, y, z = ev["x"], ev["y"], ev["z"]
+        num = ev["event_number"]
+        r2d = math.hypot(x, y)
+        is_pca = (num == pca_num)
+
+        ax.plot(
+            [0, x], [0, y],
+            color="#ff3333" if is_pca else "#ffff00",
+            linestyle="--" if is_pca else ":",
+            linewidth=1.4 if is_pca else 0.8,
+            alpha=0.85,
+        )
+
+        ax.plot(
+            x, y,
+            marker="o",
+            color="#ff3333" if is_pca else "#ffff00",
+            markersize=9 if is_pca else 6,
+            markeredgecolor="white" if is_pca else "#888800",
+            markeredgewidth=1.2,
+        )
+
+        label = f" E{num} ({r2d:.2f}m)" + (" [PCA]" if is_pca else "")
+        ax.text(
+            x + 0.15, y + 0.15,
+            label,
+            color="#ff5555" if is_pca else "#ffff66",
+            fontsize=8,
+            fontfamily="monospace",
+            fontweight="bold" if is_pca else "normal",
+        )
+
+    ax.set_xlim(-radar_range * 1.15, radar_range * 1.15)
+    ax.set_ylim(-radar_range * 1.15, radar_range * 1.15)
+    ax.set_aspect("equal")
+    ax.axis("off")
+
+    pca_r2d = math.hypot(pca_ev["x"], pca_ev["y"])
+    title = f"2D TACTICAL RADAR (XY PLANE) — {filename}\nPCA: Event #{pca_num} (Miss Distance: {pca_r2d:.2f} m)"
+    ax.set_title(title, color="#33cc33", fontsize=12, fontweight="bold", pad=16, fontfamily="monospace")
+
+    plt.tight_layout()
+    return fig
+
+
 def main():
     """Main function untuk testing"""
     import glob
