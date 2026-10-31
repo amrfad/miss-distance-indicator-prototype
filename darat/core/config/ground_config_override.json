@@ -1,4 +1,8 @@
 {
+  "comm_backend": "SDR",
+  "sdr_ipc_port": 5005,
+  "sdr_mock_mode": false,
+  "sdr_python_path": "C:\\Users\\genadratama\\radioconda\\python.exe",
   "baud_rate": 57600,
   "serial_timeout": 1.0,
   "serial_port": "COM6",

@@ -4,11 +4,12 @@
 Acts purely as a UI view. Reads and writes are handled via signals and REST API.
 """
 
+import os
 import serial
 import serial.tools.list_ports
 from PySide6.QtWidgets import (
     QWidget, QFormLayout, QVBoxLayout, QHBoxLayout,
-    QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPushButton,
+    QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPushButton, QCheckBox,
     QMessageBox, QLabel, QGridLayout, QScrollArea, QFrame,
     QStackedWidget, QListWidget,
 )
@@ -67,7 +68,7 @@ class LaptopConfigPanel(QWidget):
         "comm_backend": "SERIAL",
         "sdr_ipc_port": 5005,
         "sdr_mock_mode": False,
-        "sdr_python_path": r"D:\Software\Radioconda\python.exe",
+        "sdr_python_path": os.path.join(os.path.expanduser("~"), "radioconda", "python.exe"),
         "serial_port": "AUTO",
         "baud_rate": 230400,
         "serial_timeout": 1.0,
@@ -145,6 +146,25 @@ class LaptopConfigPanel(QWidget):
         self.sdr_ipc_port.setRange(1024, 65535)
         self.sdr_ipc_port.setValue(5005)
         sec.add_row("SDR IPC Port:", self.sdr_ipc_port)
+
+        self.sdr_mock_mode = QCheckBox("Simulasi (Mock tanpa USRP B210)")
+        self.sdr_mock_mode.setObjectName("monoField")
+        sec.add_row("SDR Mock Mode:", self.sdr_mock_mode)
+
+        py_container = QWidget()
+        py_layout = QHBoxLayout(py_container)
+        py_layout.setContentsMargins(0, 0, 0, 0)
+        py_layout.setSpacing(6)
+        self.sdr_python_path = QLineEdit()
+        self.sdr_python_path.setObjectName("monoField")
+        self.sdr_python_path.setPlaceholderText(r"C:\Users\username\radioconda\python.exe")
+        self.btn_browse_sdr_py = QPushButton("Browse...")
+        self.btn_browse_sdr_py.setObjectName("btnPrimary")
+        self.btn_browse_sdr_py.setFixedHeight(28)
+        self.btn_browse_sdr_py.clicked.connect(self._browse_sdr_python)
+        py_layout.addWidget(self.sdr_python_path, stretch=1)
+        py_layout.addWidget(self.btn_browse_sdr_py, stretch=0)
+        sec.add_row("SDR Python Path:", py_container)
 
         port_container = QWidget()
         port_layout = QHBoxLayout(port_container)
@@ -323,6 +343,17 @@ class LaptopConfigPanel(QWidget):
         self._scan_worker.finished.connect(self._scan_worker.deleteLater)
         self._scan_worker.start()
 
+    def _browse_sdr_python(self):
+        from PySide6.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Radioconda Python Executable",
+            self.sdr_python_path.text() or os.path.expanduser("~"),
+            "Python Executable (python.exe);;All Files (*)"
+        )
+        if path:
+            self.sdr_python_path.setText(os.path.normpath(path))
+
     def _update_serial_port_selection(self, target_port: str = ""):
         # Fast path: check if target_port is already present in current dropdown items
         if self.serial_port.count() > 0 and target_port:
@@ -423,6 +454,11 @@ class LaptopConfigPanel(QWidget):
             self.comm_backend.setCurrentText(str(c.get("comm_backend", "SERIAL")))
         if hasattr(self, "sdr_ipc_port"):
             self.sdr_ipc_port.setValue(int(c.get("sdr_ipc_port", 5005)))
+        if hasattr(self, "sdr_mock_mode"):
+            self.sdr_mock_mode.setChecked(bool(c.get("sdr_mock_mode", False)))
+        if hasattr(self, "sdr_python_path"):
+            default_rc = os.path.join(os.path.expanduser("~"), "radioconda", "python.exe")
+            self.sdr_python_path.setText(str(c.get("sdr_python_path", default_rc)))
         self._update_serial_port_selection(c.get("serial_port", "COM3"))
         self.baud_rate.setCurrentText(str(c.get("baud_rate", 230400)))
         self.serial_timeout.setValue(c.get("serial_timeout", 1.0))
@@ -443,6 +479,8 @@ class LaptopConfigPanel(QWidget):
         return {
             "comm_backend": self.comm_backend.currentText() if hasattr(self, "comm_backend") else "SERIAL",
             "sdr_ipc_port": self.sdr_ipc_port.value() if hasattr(self, "sdr_ipc_port") else 5005,
+            "sdr_mock_mode": self.sdr_mock_mode.isChecked() if hasattr(self, "sdr_mock_mode") else False,
+            "sdr_python_path": self.sdr_python_path.text() if hasattr(self, "sdr_python_path") else "", 
             "serial_port": self._get_serial_port_value(),
             "baud_rate": int(self.baud_rate.currentText()),
             "serial_timeout": self.serial_timeout.value(),

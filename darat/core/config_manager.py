@@ -144,6 +144,15 @@ _PARAM_SCHEMA = [
         "unit": None,
     },
     {
+        "key": "sdr_python_path",
+        "label": "SDR Python Path",
+        "description": "Path ke python.exe Radioconda untuk SDR daemon",
+        "type": "string",
+        "default": os.path.join(os.path.expanduser("~"), "radioconda", "python.exe"),
+        "requires_restart": False,
+        "unit": None,
+    },
+    {
         "key": "baud_rate",
         "label": "Baud Rate",
         "description": "Baud rate komunikasi serial; harus cocok dengan drone",

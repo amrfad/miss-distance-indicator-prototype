@@ -13,7 +13,8 @@ import threading
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Signal, QThread, QProcess
+import subprocess
+from PySide6.QtCore import QObject, Signal, QThread
 
 from ...core.config_manager import get_global_config_manager
 
@@ -47,13 +48,14 @@ class SdrBridge(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._connected = False
+        self._connect_failed = False
         self._port_name = "USRP B210 (1.4 GHz)"
         self._socket: socket.socket | None = None
         self._socket_lock = threading.Lock()
         self._rx_thread: threading.Thread | None = None
         self._rx_running = False
         self._connect_thread: _SdrConnectWorker | None = None
-        self._daemon_process: QProcess | None = None
+        self._daemon_process: subprocess.Popen | None = None
 
         cfg = get_global_config_manager().get_config()
         self._ipc_host = cfg.get("sdr_ipc_host", "127.0.0.1")
@@ -100,11 +102,15 @@ class SdrBridge(QObject):
                 return False, ""
             # Wait for socket to become available
             ready = False
-            for _ in range(15):
+            for _ in range(25):
                 time.sleep(0.3)
                 if self._check_ipc_open():
                     ready = True
                     break
+                if self._daemon_process and self._daemon_process.poll() is not None:
+                    err_out = self._daemon_process.stderr.read() if self._daemon_process.stderr else ""
+                    self.message_received.emit(f"[SDR ERROR] Daemon exited prematurely (code {self._daemon_process.returncode}): {err_out.strip()}")
+                    return False, ""
             if not ready:
                 self.message_received.emit("[SDR] Timeout waiting for SDR IPC server")
                 return False, ""
@@ -128,13 +134,23 @@ class SdrBridge(QObject):
         self._rx_thread.start()
 
         # 4. Send CONNECT command
+        self._connect_failed = False
         self._send_ipc_message({"action": "CONNECT"})
+        self.message_received.emit("[SDR] Initializing USRP B210 hardware & radio endpoint (loading FPGA/firmware, please wait)...")
 
-        # Wait briefly for response
-        for _ in range(20):
+        # Wait up to 35 seconds for USRP FPGA and RF frontend initialization
+        for i in range(350):
             time.sleep(0.1)
             if self._connected:
                 break
+            if self._connect_failed:
+                break
+            if self._daemon_process and self._daemon_process.poll() is not None:
+                err_out = self._daemon_process.stderr.read() if self._daemon_process.stderr else ""
+                self.message_received.emit(f"[SDR ERROR] Daemon exited prematurely: {err_out.strip()}")
+                break
+            if i > 0 and i % 30 == 0:
+                self.message_received.emit(f"[SDR] Still initializing USRP B210... ({i // 10}s)")
 
         if self._connected:
             self.connection_changed.emit(True, self._port_name)
@@ -176,6 +192,14 @@ class SdrBridge(QObject):
         """Disconnect and stop SDR radio endpoint."""
         if self._connected and self._socket:
             self._send_ipc_message({"action": "DISCONNECT"})
+
+        if self._daemon_process:
+            try:
+                if self._daemon_process.poll() is None:
+                    self._daemon_process.terminate()
+            except Exception:
+                pass
+            self._daemon_process = None
 
         self._rx_running = False
         with self._socket_lock:
@@ -242,13 +266,40 @@ class SdrBridge(QObject):
         except (OSError, socket.timeout):
             return False
 
+    @staticmethod
+    def _detect_radioconda_python() -> str | None:
+        candidates = [
+            os.path.join(os.path.expanduser("~"), "radioconda", "python.exe"),
+            r"C:\radioconda\python.exe",
+            r"D:\radioconda\python.exe",
+            r"D:\Software\Radioconda\python.exe",
+            os.path.join(os.path.expanduser("~"), "Miniconda3", "envs", "radioconda", "python.exe"),
+            os.path.join(os.path.expanduser("~"), "Anaconda3", "envs", "radioconda", "python.exe"),
+            os.path.join(os.path.expanduser("~"), "AppData", "Local", "radioconda", "python.exe"),
+            r"C:\ProgramData\radioconda\python.exe",
+        ]
+        for c in candidates:
+            if os.path.isfile(c):
+                return c
+        return None
+
     def _spawn_daemon(self) -> bool:
         """Spawn ground_unit_headless.py in a separate background process."""
         cfg = get_global_config_manager().get_config()
         # Find Python executable
-        python_bin = cfg.get("sdr_python_path", "")
-        if not python_bin or not os.path.exists(python_bin):
-            python_bin = sys.executable
+        python_bin = cfg.get("sdr_python_path", "").strip()
+        if not python_bin or not os.path.isfile(python_bin):
+            detected = self._detect_radioconda_python()
+            if detected:
+                python_bin = detected
+                self.message_received.emit(f"[SDR] Auto-detected Radioconda Python at: {python_bin}")
+            else:
+                python_bin = sys.executable
+                if not cfg.get("sdr_mock_mode", False):
+                    self.message_received.emit(
+                        f"[SDR WARN] Radioconda not detected. Falling back to {python_bin}. "
+                        "If using USRP B210 hardware, please set SDR Python Path in Config."
+                    )
 
         # Find ground_unit_headless.py
         root_dir = Path(__file__).resolve().parent.parent.parent.parent
@@ -264,15 +315,36 @@ class SdrBridge(QObject):
             "--ipc-host", str(self._ipc_host),
             "--ipc-port", str(self._ipc_port),
             "--output-dir", str(output_dir),
+            "--metrics-dir", str(output_dir),
         ]
 
         if cfg.get("sdr_mock_mode", False):
             args.append("--mock")
 
+        cmd = [python_bin, "-u"] + args
         self.message_received.emit(f"[SDR] Launching: {python_bin} {script_path.name}")
-        self._daemon_process = QProcess(self)
-        self._daemon_process.start(python_bin, args)
-        return True
+
+        # Configure environment so Radioconda GNU Radio DLLs load properly on Windows
+        env = os.environ.copy()
+        radioconda_root = os.path.dirname(os.path.abspath(python_bin))
+        lib_bin = os.path.join(radioconda_root, "Library", "bin")
+        mingw_bin = os.path.join(radioconda_root, "Library", "mingw-w64", "bin")
+        scripts_dir = os.path.join(radioconda_root, "Scripts")
+        env["PATH"] = f"{radioconda_root};{lib_bin};{mingw_bin};{scripts_dir};" + env.get("PATH", "")
+
+        try:
+            self._daemon_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=env,
+                text=True,
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+            )
+            return True
+        except Exception as exc:
+            self.message_received.emit(f"[SDR ERROR] Failed to spawn SDR daemon: {exc}")
+            return False
 
     def _send_ipc_message(self, msg: dict) -> bool:
         with self._socket_lock:
@@ -325,6 +397,7 @@ class SdrBridge(QObject):
 
         elif ev_type == "CONNECT_FAILED":
             self._connected = False
+            self._connect_failed = True
             msg = event_data.get("message", "Unknown error")
             self.connection_changed.emit(False, "")
             self.message_received.emit(f"[SDR ERROR] Connect failed: {msg}")

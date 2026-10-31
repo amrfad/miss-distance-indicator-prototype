@@ -281,13 +281,20 @@ class CommandPage(QWidget):
         self._is_connecting = False
         self.connect_btn.setText("CONNECT")
         if success:
-            self._log(f"Connected to serial port ({port})", "INFO")
+            self._log(f"Connected to port ({port})", "INFO")
         else:
-            self._log("Connection failed: No serial device found", "ERROR")
+            is_sdr = "Sdr" in self._serial.__class__.__name__
+            err_title = "SDR Connection Failed" if is_sdr else "Connection Failed"
+            err_msg = (
+                "Failed to connect to SDR Radio Link.\n\nPlease check the log console for SDR daemon errors."
+                if is_sdr
+                else "No serial device detected.\n\nPlease check the cable connection and driver."
+            )
+            self._log(f"Connection failed: {err_title}", "ERROR")
             QMessageBox.warning(
                 self,
-                "Connection Failed",
-                "No serial device detected.\n\nPlease check the cable connection and driver.",
+                err_title,
+                err_msg,
                 QMessageBox.StandardButton.Ok
             )
         self._update_ui_state()
