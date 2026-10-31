@@ -63,7 +63,7 @@ class VisualizePage(QWidget):
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(10)
 
-        title = QLabel("TDOA POSITION VISUALIZATION (2D TACTICAL XY)")
+        title = QLabel("TDOA POSITION VISUALIZATION (2D XY)")
         title.setObjectName("sectionTitle")
         root.addWidget(title)
 
@@ -94,16 +94,16 @@ class VisualizePage(QWidget):
         self._file_count.setObjectName("statusHeading")
         ll.addWidget(self._file_count)
 
-        viz_btn = QPushButton("▶  VISUALIZE SELECTED")
+        viz_btn = QPushButton("VISUALIZE SELECTED")
         viz_btn.setObjectName("btnPrimary")
         viz_btn.clicked.connect(self._visualize_selected)
         ll.addWidget(viz_btn)
 
-        change_btn = QPushButton("📁  CHANGE DIR")
+        change_btn = QPushButton("CHANGE DIR")
         change_btn.clicked.connect(self._change_directory)
         ll.addWidget(change_btn)
 
-        refresh_btn = QPushButton("↻  REFRESH LIST")
+        refresh_btn = QPushButton("REFRESH LIST")
         refresh_btn.clicked.connect(self._refresh_file_list)
         ll.addWidget(refresh_btn)
 
@@ -134,7 +134,7 @@ class VisualizePage(QWidget):
         tl.setContentsMargins(8, 8, 8, 8)
         tl.setSpacing(8)
 
-        panel_title = QLabel("TACTICAL TELEMETRY")
+        panel_title = QLabel("TELEMETRY SUMMARY")
         panel_title.setStyleSheet(
             "color: #33cc33; font-family: 'IBM Plex Mono'; font-weight: bold; font-size: 11px;"
         )
@@ -191,12 +191,6 @@ class VisualizePage(QWidget):
 
         tl.addWidget(self._table, stretch=1)
 
-        # Petunjuk di bawah tabel
-        hint_lbl = QLabel("Hint: Klik baris tabel untuk menyorot event di radar.")
-        hint_lbl.setStyleSheet(
-            "color: #1a7a1a; font-family: 'IBM Plex Mono'; font-size: 9px; border: none;"
-        )
-        tl.addWidget(hint_lbl)
 
         viz_splitter.addWidget(telemetry_panel)
         viz_splitter.setSizes([560, 380])

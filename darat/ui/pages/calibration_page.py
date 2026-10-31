@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
-    QScrollArea,
+    QSplitter,
     QDoubleSpinBox,
     QTableWidget,
     QTableWidgetItem,
@@ -130,181 +130,176 @@ class CalibrationPage(QWidget):
 
     def _build_ui(self):
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(16, 12, 16, 12)
-        main_layout.setSpacing(12)
-
-        # ── Scroll Area agar muat di semua resolusi ──
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-
-        container = QWidget()
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(0, 0, 8, 0)
-        layout.setSpacing(14)
+        main_layout.setContentsMargins(14, 12, 14, 12)
+        main_layout.setSpacing(10)
 
         # ── Header Bar ──
         header_card = QFrame()
         header_card.setObjectName("card")
         h_layout = QHBoxLayout(header_card)
-        h_layout.setContentsMargins(16, 12, 16, 12)
+        h_layout.setContentsMargins(14, 10, 14, 10)
 
         title_vbox = QVBoxLayout()
-        title_lbl = QLabel("🔧 KALIBRASI POSISI MIKROFON (LIVE)")
+        title_lbl = QLabel("KALIBRASI POSISI MIKROFON")
         title_lbl.setObjectName("sectionTitle")
-        sub_lbl = QLabel("Estimasi koordinat 3D mikrofon drone dari observasi TDOA sumber bersuara terukur")
+        sub_lbl = QLabel("Estimasi koordinat 3D mikrofon drone via observasi TDOA multi-titik")
         sub_lbl.setObjectName("statusHeading")
         title_vbox.addWidget(title_lbl)
         title_vbox.addWidget(sub_lbl)
         h_layout.addLayout(title_vbox, stretch=1)
 
-        self._conn_badge = QLabel("○ DISCONNECTED")
+        self._conn_badge = QLabel("DISCONNECTED")
         self._conn_badge.setObjectName("statusHeading")
-        self._conn_badge.setStyleSheet("color: #dc2626; font-weight: bold; font-size: 13px;")
+        self._conn_badge.setStyleSheet("color: #dc2626; font-weight: bold; font-size: 12px;")
         h_layout.addWidget(self._conn_badge)
 
-        layout.addWidget(header_card)
+        main_layout.addWidget(header_card)
 
-        # ── Card 1: Input Titik Sumber & Rekam ──
+        # ── Splitter 2 Kolom: Kiri (Input & Sesi) | Kanan (Kalkulasi & Hasil) ──
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.setHandleWidth(4)
+        splitter.setChildrenCollapsible(False)
+
+        # ── Kolom Kiri ──
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(10)
+
+        # Card 1: Input Titik Sumber & Rekam
         card1 = QFrame()
         card1.setObjectName("card")
         c1_layout = QVBoxLayout(card1)
-        c1_layout.setContentsMargins(16, 14, 16, 14)
-        c1_layout.setSpacing(10)
+        c1_layout.setContentsMargins(14, 12, 14, 12)
+        c1_layout.setSpacing(8)
 
-        c1_title = QLabel("LANGKAH 1: INPUT KOORDINAT SUMBER SUARA & REKAM")
+        c1_title = QLabel("INPUT KOORDINAT SUMBER SUARA")
         c1_title.setObjectName("sectionTitle")
         c1_layout.addWidget(c1_title)
 
-        desc_lbl = QLabel(
-            "Posisikan sumber suara uji (speaker / tepukan / buzzer) pada koordinat terukur (relatif terhadap pusat array drone).\n"
-            "Masukkan nilai X, Y, Z (dalam meter) lalu klik 'MULAI REKAM'."
-        )
-        desc_lbl.setStyleSheet("color: #475569; font-size: 11px;")
-        c1_layout.addWidget(desc_lbl)
-
         # Input koordinat X, Y, Z
         coord_layout = QHBoxLayout()
-        coord_layout.setSpacing(16)
+        coord_layout.setSpacing(12)
 
         # X
-        x_box = QHBoxLayout()
+        x_box = QVBoxLayout()
         x_lbl = QLabel("X (meter):")
-        x_lbl.setStyleSheet("font-weight: bold;")
+        x_lbl.setStyleSheet("font-weight: 600; font-size: 11px;")
         self.spin_x = QDoubleSpinBox()
         self.spin_x.setRange(-999.0, 999.0)
         self.spin_x.setDecimals(3)
         self.spin_x.setSingleStep(0.05)
         self.spin_x.setValue(0.0)
-        self.spin_x.setMinimumWidth(110)
-        self.spin_x.setMinimumHeight(32)
+        self.spin_x.setMinimumHeight(30)
         x_box.addWidget(x_lbl)
         x_box.addWidget(self.spin_x)
         coord_layout.addLayout(x_box)
 
         # Y
-        y_box = QHBoxLayout()
+        y_box = QVBoxLayout()
         y_lbl = QLabel("Y (meter):")
-        y_lbl.setStyleSheet("font-weight: bold;")
+        y_lbl.setStyleSheet("font-weight: 600; font-size: 11px;")
         self.spin_y = QDoubleSpinBox()
         self.spin_y.setRange(-999.0, 999.0)
         self.spin_y.setDecimals(3)
         self.spin_y.setSingleStep(0.05)
         self.spin_y.setValue(0.0)
-        self.spin_y.setMinimumWidth(110)
-        self.spin_y.setMinimumHeight(32)
+        self.spin_y.setMinimumHeight(30)
         y_box.addWidget(y_lbl)
         y_box.addWidget(self.spin_y)
         coord_layout.addLayout(y_box)
 
         # Z
-        z_box = QHBoxLayout()
+        z_box = QVBoxLayout()
         z_lbl = QLabel("Z (meter):")
-        z_lbl.setStyleSheet("font-weight: bold;")
+        z_lbl.setStyleSheet("font-weight: 600; font-size: 11px;")
         self.spin_z = QDoubleSpinBox()
         self.spin_z.setRange(-999.0, 999.0)
         self.spin_z.setDecimals(3)
         self.spin_z.setSingleStep(0.05)
         self.spin_z.setValue(0.0)
-        self.spin_z.setMinimumWidth(110)
-        self.spin_z.setMinimumHeight(32)
+        self.spin_z.setMinimumHeight(30)
         z_box.addWidget(z_lbl)
         z_box.addWidget(self.spin_z)
         coord_layout.addLayout(z_box)
 
-        coord_layout.addStretch()
         c1_layout.addLayout(coord_layout)
 
         # Tombol Mulai & Selesai Rekam
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(12)
+        btn_row.setSpacing(10)
 
-        self.btn_start = QPushButton("● MULAI REKAM")
+        self.btn_start = QPushButton("MULAI REKAM")
         self.btn_start.setObjectName("btnStart")
-        self.btn_start.setMinimumHeight(42)
+        self.btn_start.setMinimumHeight(38)
         self.btn_start.clicked.connect(self._on_start_record)
         btn_row.addWidget(self.btn_start, stretch=1)
 
-        self.btn_stop = QPushButton("■ SELESAI REKAM")
+        self.btn_stop = QPushButton("SELESAI REKAM")
         self.btn_stop.setObjectName("btnStop")
-        self.btn_stop.setMinimumHeight(42)
+        self.btn_stop.setMinimumHeight(38)
         self.btn_stop.clicked.connect(self._on_stop_record)
         btn_row.addWidget(self.btn_stop, stretch=1)
 
         c1_layout.addLayout(btn_row)
 
-        # Status Banner (Recording / Waiting indicator)
+        # Status Banner
         self.status_banner = QLabel("Status: Siap merekam titik sumber.")
         self.status_banner.setObjectName("statusHeading")
         self.status_banner.setStyleSheet(
-            "background-color: #f1f5f9; padding: 8px 12px; border-radius: 4px; "
-            "color: #334155; font-size: 12px; font-weight: 600;"
+            "background-color: #f1f5f9; padding: 6px 10px; border-radius: 4px; "
+            "color: #334155; font-size: 11px; font-weight: 600;"
         )
         c1_layout.addWidget(self.status_banner)
 
-        layout.addWidget(card1)
+        left_layout.addWidget(card1)
 
-        # ── Card 2: Daftar Sesi Terkumpul ──
+        # Card 2: Daftar Sesi Terkumpul
         card2 = QFrame()
         card2.setObjectName("card")
         c2_layout = QVBoxLayout(card2)
-        c2_layout.setContentsMargins(16, 14, 16, 14)
-        c2_layout.setSpacing(10)
+        c2_layout.setContentsMargins(14, 12, 14, 12)
+        c2_layout.setSpacing(8)
 
         self.session_list = SessionListWidget()
         self.session_list.sessions_changed.connect(self._update_ui_state)
-        c2_layout.addWidget(self.session_list)
+        c2_layout.addWidget(self.session_list, stretch=1)
 
         # Tombol Hitung Kalibrasi
-        self.btn_calculate = QPushButton("⚡ HITUNG ESTIMASI POSISI MIKROFON (OPTIMASI)")
+        self.btn_calculate = QPushButton("HITUNG ESTIMASI POSISI MIKROFON")
         self.btn_calculate.setObjectName("btnPrimary")
-        self.btn_calculate.setMinimumHeight(44)
+        self.btn_calculate.setMinimumHeight(40)
         self.btn_calculate.clicked.connect(self._on_run_calibration)
         c2_layout.addWidget(self.btn_calculate)
 
-        layout.addWidget(card2)
+        left_layout.addWidget(card2, stretch=1)
+        splitter.addWidget(left_widget)
 
-        # ── Card 3: Panel Hasil Kalibrasi (Default Hidden) ──
+        # ── Kolom Kanan: Panel Hasil Kalibrasi ──
+        right_widget = QWidget()
+        right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(10)
+
         self.card_result = QFrame()
         self.card_result.setObjectName("card")
         c3_layout = QVBoxLayout(self.card_result)
-        c3_layout.setContentsMargins(16, 14, 16, 14)
+        c3_layout.setContentsMargins(14, 12, 14, 12)
         c3_layout.setSpacing(10)
 
         # Header hasil
         res_header = QHBoxLayout()
-        res_title = QLabel("HASIL KALIBRASI TERAKHIR")
+        res_title = QLabel("HASIL KALIBRASI")
         res_title.setObjectName("sectionTitle")
         res_header.addWidget(res_title)
-
         res_header.addStretch()
 
-        self.lbl_rms = QLabel("RMS Residual: -")
-        self.lbl_rms.setStyleSheet("color: #2563eb; font-weight: bold; font-size: 13px;")
+        self.lbl_rms = QLabel("RMS Residual: --")
+        self.lbl_rms.setStyleSheet("color: #2563eb; font-weight: bold; font-size: 12px;")
         res_header.addWidget(self.lbl_rms)
 
-        self.lbl_converged = QLabel("Status: -")
-        self.lbl_converged.setStyleSheet("font-weight: bold; font-size: 13px;")
+        self.lbl_converged = QLabel("Status: Menunggu kalkulasi")
+        self.lbl_converged.setStyleSheet("font-weight: bold; font-size: 12px;")
         res_header.addWidget(self.lbl_converged)
 
         c3_layout.addLayout(res_header)
@@ -312,7 +307,7 @@ class CalibrationPage(QWidget):
         # Tabel perbandingan posisi mikrofon
         self.table_result = QTableWidget(6, 5)
         self.table_result.setHorizontalHeaderLabels([
-            "Mic", "X Estimasi (m)", "Y Estimasi (m)", "Z Estimasi (m)", "Δ vs Config Saat Ini"
+            "Mic", "X Estimasi (m)", "Y Estimasi (m)", "Z Estimasi (m)", "Δ vs Config"
         ])
         self.table_result.verticalHeader().setVisible(False)
         self.table_result.setAlternatingRowColors(True)
@@ -326,36 +321,38 @@ class CalibrationPage(QWidget):
         t_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         t_header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
 
-        self.table_result.setFixedHeight(210)
-        c3_layout.addWidget(self.table_result)
+        c3_layout.addWidget(self.table_result, stretch=1)
 
-        self.lbl_result_info = QLabel("")
+        self.lbl_result_info = QLabel("Kumpulkan sesi pengukuran suara dan klik 'HITUNG ESTIMASI POSISI MIKROFON'.")
         self.lbl_result_info.setStyleSheet("color: #64748b; font-size: 11px;")
+        self.lbl_result_info.setWordWrap(True)
         c3_layout.addWidget(self.lbl_result_info)
 
         # Tombol Aksi Hasil: Buang atau Terapkan
         action_row = QHBoxLayout()
-        action_row.setSpacing(12)
+        action_row.setSpacing(10)
 
-        self.btn_discard = QPushButton("✕ Buang Hasil")
+        self.btn_discard = QPushButton("Buang Hasil")
         self.btn_discard.setObjectName("btnReset")
-        self.btn_discard.setMinimumHeight(40)
+        self.btn_discard.setMinimumHeight(38)
         self.btn_discard.clicked.connect(self._on_discard_result)
+        self.btn_discard.setEnabled(False)
         action_row.addWidget(self.btn_discard)
 
-        self.btn_apply = QPushButton("✔ TERAPKAN KE KONFIGURASI GROUND STATION")
+        self.btn_apply = QPushButton("TERAPKAN KE KONFIGURASI")
         self.btn_apply.setObjectName("btnSave")
-        self.btn_apply.setMinimumHeight(40)
+        self.btn_apply.setMinimumHeight(38)
         self.btn_apply.clicked.connect(self._on_apply_to_config)
+        self.btn_apply.setEnabled(False)
         action_row.addWidget(self.btn_apply, stretch=1)
 
         c3_layout.addLayout(action_row)
 
-        self.card_result.setVisible(False)
-        layout.addWidget(self.card_result)
+        right_layout.addWidget(self.card_result, stretch=1)
+        splitter.addWidget(right_widget)
 
-        scroll.setWidget(container)
-        main_layout.addWidget(scroll)
+        splitter.setSizes([460, 540])
+        main_layout.addWidget(splitter, stretch=1)
 
     # ── State Updates ─────────────────────────────────────────────
 
@@ -366,11 +363,11 @@ class CalibrationPage(QWidget):
 
     def _on_connection_changed(self, connected: bool, port: str):
         if connected:
-            self._conn_badge.setText(f"● CONNECTED ({port})")
-            self._conn_badge.setStyleSheet("color: #16a34a; font-weight: bold; font-size: 13px;")
+            self._conn_badge.setText(f"CONNECTED ({port})")
+            self._conn_badge.setStyleSheet("color: #16a34a; font-weight: bold; font-size: 12px;")
         else:
-            self._conn_badge.setText("○ DISCONNECTED")
-            self._conn_badge.setStyleSheet("color: #dc2626; font-weight: bold; font-size: 13px;")
+            self._conn_badge.setText("DISCONNECTED")
+            self._conn_badge.setStyleSheet("color: #dc2626; font-weight: bold; font-size: 12px;")
         self._update_ui_state()
 
     def _on_serial_message(self, msg: str):
@@ -400,13 +397,13 @@ class CalibrationPage(QWidget):
             self.btn_stop.setEnabled(True)
             self.btn_calculate.setEnabled(False)
             self.status_banner.setStyleSheet(
-                "background-color: #fee2e2; border: 1px solid #ef4444; padding: 8px 12px; "
-                "border-radius: 4px; color: #b91c1c; font-size: 12px; font-weight: bold;"
+                "background-color: #fee2e2; border: 1px solid #ef4444; padding: 6px 10px; "
+                "border-radius: 4px; color: #b91c1c; font-size: 11px; font-weight: bold;"
             )
             mins = self._recording_duration_sec // 60
             secs = self._recording_duration_sec % 60
             self.status_banner.setText(
-                f"● SEDANG MEREKAM... Durasi: {mins:02d}:{secs:02d} | "
+                f"SEDANG MEREKAM... Durasi: {mins:02d}:{secs:02d} | "
                 f"Sumber: ({self._current_source_pos[0]:+.3f}, {self._current_source_pos[1]:+.3f}, {self._current_source_pos[2]:+.3f}) m"
             )
 
@@ -419,11 +416,11 @@ class CalibrationPage(QWidget):
             self.btn_stop.setEnabled(False)
             self.btn_calculate.setEnabled(False)
             self.status_banner.setStyleSheet(
-                "background-color: #e0f2fe; border: 1px solid #38bdf8; padding: 8px 12px; "
-                "border-radius: 4px; color: #0369a1; font-size: 12px; font-weight: bold;"
+                "background-color: #e0f2fe; border: 1px solid #38bdf8; padding: 6px 10px; "
+                "border-radius: 4px; color: #0369a1; font-size: 11px; font-weight: bold;"
             )
             self.status_banner.setText(
-                f"⟳ MENUNGGU DATA DARI DRONE... ({self._waiting_elapsed_sec:.1f} detik) "
+                f"MENUNGGU DATA DARI DRONE... ({self._waiting_elapsed_sec:.1f} detik) "
                 f"Drone sedang memproses dan mengirimkan JSON TDOA."
             )
 
@@ -438,18 +435,17 @@ class CalibrationPage(QWidget):
 
             if not connected:
                 self.status_banner.setStyleSheet(
-                    "background-color: #f1f5f9; padding: 8px 12px; border-radius: 4px; "
-                    "color: #dc2626; font-size: 12px; font-weight: 600;"
+                    "background-color: #f1f5f9; padding: 6px 10px; border-radius: 4px; "
+                    "color: #dc2626; font-size: 11px; font-weight: 600;"
                 )
-                self.status_banner.setText("⚠ Drone belum terhubung via serial port. Hubungkan perangkat terlebih dahulu.")
+                self.status_banner.setText("Drone belum terhubung via serial port. Hubungkan perangkat terlebih dahulu.")
             else:
                 self.status_banner.setStyleSheet(
-                    "background-color: #f0fdf4; border: 1px solid #86efac; padding: 8px 12px; "
-                    "border-radius: 4px; color: #15803d; font-size: 12px; font-weight: 600;"
+                    "background-color: #f0fdf4; border: 1px solid #86efac; padding: 6px 10px; "
+                    "border-radius: 4px; color: #15803d; font-size: 11px; font-weight: 600;"
                 )
                 self.status_banner.setText(
-                    f"✓ Siap merekam. Masukkan koordinat sumber lalu klik 'MULAI REKAM'. "
-                    f"({valid_sessions} sesi valid terkumpul)"
+                    f"Siap merekam titik sumber ({valid_sessions} sesi valid terkumpul)."
                 )
 
     # ── Flow Rekam ────────────────────────────────────────────────
@@ -499,7 +495,7 @@ class CalibrationPage(QWidget):
         mins = self._recording_duration_sec // 60
         secs = self._recording_duration_sec % 60
         self.status_banner.setText(
-            f"● SEDANG MEREKAM... Durasi: {mins:02d}:{secs:02d} | "
+            f"SEDANG MEREKAM... Durasi: {mins:02d}:{secs:02d} | "
             f"Sumber: ({self._current_source_pos[0]:+.3f}, {self._current_source_pos[1]:+.3f}, {self._current_source_pos[2]:+.3f}) m"
         )
 
@@ -523,7 +519,7 @@ class CalibrationPage(QWidget):
     def _on_waiting_tick(self):
         self._waiting_elapsed_sec += 0.2
         self.status_banner.setText(
-            f"⟳ MENUNGGU DATA DARI DRONE... ({self._waiting_elapsed_sec:.1f} detik) "
+            f"MENUNGGU DATA DARI DRONE... ({self._waiting_elapsed_sec:.1f} detik) "
             f"Drone sedang memproses dan mengirimkan JSON TDOA."
         )
 
@@ -559,77 +555,72 @@ class CalibrationPage(QWidget):
             save_dir = getattr(self._jr, "save_directory", os.getcwd())
             try:
                 final_json_path = merge_session_jsons(self._session_chunk_files, save_dir)
+                self._log(f"Multi-chunk digabungkan ke: {os.path.basename(final_json_path)}", "INFO")
             except Exception as e:
-                self._log(f"Gagal menggabungkan chunk JSON: {e}", "ERROR")
+                self._log(f"Gagal menggabungkan multi-chunk JSON: {e}", "ERROR")
+                final_json_path = self._session_chunk_files[-1]
 
-        if not final_json_path or not os.path.isfile(final_json_path):
-            self._log("Gagal menemukan file JSON hasil rekaman yang valid.", "ERROR")
+        if not final_json_path or not os.path.exists(final_json_path):
+            self._log("Berkas JSON rekaman tidak valid.", "ERROR")
             self._update_ui_state()
             return
 
-        # Parsing ke CalibrationSession
-        try:
-            session = parse_tdoa_json(final_json_path, self._current_source_pos)
-            self.session_list.add_session(session)
-            status_str = f"{session.n_events} events" if session.is_valid else "0 event (diabaikan saat optimasi)"
-            self._log(
-                f"✓ Sesi #{self.session_list.session_count()} berhasil ditambahkan "
-                f"dari {os.path.basename(final_json_path)} ({status_str})",
-                "SUCCESS" if session.is_valid else "WARNING",
-            )
-        except Exception as exc:
-            self._log(f"Gagal mem-parsing data sesi: {exc}", "ERROR")
+        # Parse data sesi kalibrasi
+        session = parse_tdoa_json(
+            final_json_path,
+            source_pos=self._current_source_pos,
+        )
+
+        if not session.events:
+            self._log("Tidak ada event valid pada sesi rekaman ini.", "WARNING")
+            self._update_ui_state()
+            return
+
+        # Tambahkan sesi ke list widget
+        self.session_list.add_session(session)
+        self._log(
+            f"Sesi kalibrasi berhasil ditambahkan: {len(session.events)} event TDOA "
+            f"pada posisi ({self._current_source_pos[0]:+.3f}, {self._current_source_pos[1]:+.3f}, {self._current_source_pos[2]:+.3f}) m",
+            "INFO"
+        )
 
         self._update_ui_state()
 
     @Slot(str)
     def _on_json_saved_gui(self, file_path: str):
-        """Dipanggil dari signal saat file JSON chunk tersimpan."""
-        if file_path not in self._session_chunk_files:
+        if file_path and os.path.exists(file_path):
             self._session_chunk_files.append(file_path)
-            self._log(f"Menerima chunk TDOA: {os.path.basename(file_path)}", "INFO")
+            self._log(f"JSON diterima: {os.path.basename(file_path)}", "INFO")
 
-    # ── Flow Optimasi & Kalibrasi ──────────────────────────────────
+    # ── Flow Hitung Kalibrasi ─────────────────────────────────────
 
     def _on_run_calibration(self):
         valid_sessions = self.session_list.get_valid_sessions()
         if not valid_sessions:
-            QMessageBox.warning(
-                self,
-                "Data Belum Cukup",
-                "Tidak ada sesi rekaman yang valid (memiliki event suara) untuk dihitung."
-            )
+            QMessageBox.warning(self, "Tidak Ada Sesi Valid", "Pilih minimal 1 sesi kalibrasi yang valid.")
             return
 
-        # Dapatkan initial mic positions dan speed_of_sound dari config_manager
         initial_pos = None
-        speed_of_sound = 343.0
         if self._config_manager:
-            cfg = self._config_manager.get_config()
-            initial_pos = cfg.get("mic_positions")
-            speed_of_sound = float(cfg.get("speed_of_sound", 343.0))
+            initial_pos = self._config_manager.get_mic_positions_numpy()
 
+        self._log(f"Menjalankan optimasi kalibrasi menggunakan {len(valid_sessions)} sesi...", "INFO")
         self.btn_calculate.setEnabled(False)
-        self.btn_calculate.setText("⏳ MENGHITUNG OPTIMASI...")
-        self._log(
-            f"Memulai kalibrasi least-squares dengan {len(valid_sessions)} sesi valid...",
-            "INFO"
-        )
+        self.btn_calculate.setText("MENGHITUNG OPTIMASI...")
 
         self._worker = _CalibrationWorker(
             sessions=valid_sessions,
             initial_pos=initial_pos,
-            speed_of_sound=speed_of_sound,
+            speed_of_sound=343.0,
             parent=self,
         )
         self._worker.result_ready.connect(self._on_calibration_success)
         self._worker.error_occurred.connect(self._on_calibration_error)
         self._worker.start()
 
-    @Slot(object)
     def _on_calibration_success(self, result: CalibrationResult):
         self.btn_calculate.setEnabled(True)
-        self.btn_calculate.setText("⚡ HITUNG ESTIMASI POSISI MIKROFON (OPTIMASI)")
+        self.btn_calculate.setText("HITUNG ESTIMASI POSISI MIKROFON")
         self._last_result = result
 
         self._log(
@@ -642,7 +633,7 @@ class CalibrationPage(QWidget):
     @Slot(str)
     def _on_calibration_error(self, err_msg: str):
         self.btn_calculate.setEnabled(True)
-        self.btn_calculate.setText("⚡ HITUNG ESTIMASI POSISI MIKROFON (OPTIMASI)")
+        self.btn_calculate.setText("HITUNG ESTIMASI POSISI MIKROFON")
         self._log(f"Kalibrasi gagal: {err_msg}", "ERROR")
         QMessageBox.critical(self, "Kesalahan Kalibrasi", f"Proses optimasi gagal:\n{err_msg}")
 
@@ -650,11 +641,11 @@ class CalibrationPage(QWidget):
         """Menampilkan data hasil estimasi di tabel perbandingan."""
         self.lbl_rms.setText(f"RMS Residual: {res.rms_residual_ms:.4f} ms")
         if res.converged:
-            self.lbl_converged.setText("Status: Konvergen ✓")
-            self.lbl_converged.setStyleSheet("color: #16a34a; font-weight: bold; font-size: 13px;")
+            self.lbl_converged.setText("Status: Konvergen")
+            self.lbl_converged.setStyleSheet("color: #16a34a; font-weight: bold; font-size: 12px;")
         else:
-            self.lbl_converged.setText("Status: Belum Konvergen ⚠")
-            self.lbl_converged.setStyleSheet("color: #d97706; font-weight: bold; font-size: 13px;")
+            self.lbl_converged.setText("Status: Belum Konvergen")
+            self.lbl_converged.setStyleSheet("color: #d97706; font-weight: bold; font-size: 12px;")
 
         self.lbl_result_info.setText(
             f"Dihitung dari {res.n_sessions_used} sesi valid ({res.n_events_used} event suara). "
@@ -710,12 +701,19 @@ class CalibrationPage(QWidget):
             delta_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.table_result.setItem(idx, 4, delta_item)
 
-        self.card_result.setVisible(True)
+        self.btn_apply.setEnabled(True)
+        self.btn_discard.setEnabled(True)
 
     def _on_discard_result(self):
         """Membuang hasil estimasi saat ini."""
         self._last_result = None
-        self.card_result.setVisible(False)
+        self.lbl_rms.setText("RMS Residual: --")
+        self.lbl_converged.setText("Status: Menunggu kalkulasi")
+        self.lbl_converged.setStyleSheet("font-weight: bold; font-size: 12px;")
+        self.lbl_result_info.setText("Hasil estimasi dibuang. Kumpulkan sesi dan hitung ulang.")
+        self.table_result.clearContents()
+        self.btn_apply.setEnabled(False)
+        self.btn_discard.setEnabled(False)
         self._log("Hasil kalibrasi dibuang.", "INFO")
 
     def _on_apply_to_config(self):
@@ -737,7 +735,7 @@ class CalibrationPage(QWidget):
             if self._config_manager:
                 try:
                     self._config_manager.update({"mic_positions": new_positions})
-                    self._log("✓ Posisi mikrofon baru berhasil disimpan ke konfigurasi Ground Station!", "SUCCESS")
+                    self._log("Posisi mikrofon baru berhasil disimpan ke konfigurasi Ground Station!", "SUCCESS")
                 except Exception as exc:
                     self._log(f"Gagal memperbarui konfigurasi: {exc}", "ERROR")
                     QMessageBox.critical(self, "Gagal Simpan", f"Error saat menyimpan konfigurasi:\n{exc}")

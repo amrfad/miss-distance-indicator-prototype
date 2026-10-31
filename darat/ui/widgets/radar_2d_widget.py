@@ -423,7 +423,7 @@ class Radar2DWidget(QWidget):
         bl.setContentsMargins(8, 3, 8, 3)
         bl.setSpacing(8)
 
-        title = QLabel("RADAR 2D — TACTICAL XY CPA DISPLAY")
+        title = QLabel("RADAR 2D (XY)")
         title.setStyleSheet(
             "color: #33cc33; font-family: 'IBM Plex Mono'; font-weight: bold; font-size: 11px;"
         )
@@ -465,7 +465,7 @@ class Radar2DWidget(QWidget):
         bl.addWidget(self._btn_autofit)
 
         # Toggle Drone Airframe
-        self._btn_airframe = QPushButton("✈ PLANE")
+        self._btn_airframe = QPushButton("AIRFRAME")
         self._btn_airframe.setCheckable(True)
         self._btn_airframe.setChecked(True)
         self._btn_airframe.setStyleSheet(btn_style)
@@ -474,7 +474,7 @@ class Radar2DWidget(QWidget):
         bl.addWidget(self._btn_airframe)
 
         # Toggle Mics
-        self._btn_mics = QPushButton("▲ MICS")
+        self._btn_mics = QPushButton("MICS")
         self._btn_mics.setCheckable(True)
         self._btn_mics.setChecked(True)
         self._btn_mics.setStyleSheet(btn_style)

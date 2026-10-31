@@ -372,7 +372,7 @@ class CommandPage(QWidget):
 
         basename = os.path.basename(filename)
         timestamp_str = datetime.now().strftime("%H:%M:%S")
-        item = QListWidgetItem(f"📄  [{timestamp_str}]  {basename}")
+        item = QListWidgetItem(f"[{timestamp_str}]  {basename}")
         item.setData(Qt.ItemDataRole.UserRole, filename)
         self.json_list_widget.insertItem(0, item)
         self.json_list_widget.scrollToTop()

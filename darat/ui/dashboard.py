@@ -189,11 +189,11 @@ class MainDashboard(QMainWindow):
         self._nav_group.setExclusive(True)
 
         nav_items = [
-            ("⚙ CONFIG", self._PAGE_CONFIG),
-            ("📡 COMMAND", self._PAGE_COMMAND),
-            ("🔬 PROCESS", self._PAGE_PROCESS),
-            ("📊 VISUALIZE", self._PAGE_VISUALIZE),
-            ("🔧 CALIBRATE", self._PAGE_CALIBRATE),
+            ("CONFIG", self._PAGE_CONFIG),
+            ("COMMAND", self._PAGE_COMMAND),
+            ("PROCESS", self._PAGE_PROCESS),
+            ("VISUALIZE", self._PAGE_VISUALIZE),
+            ("CALIBRATE", self._PAGE_CALIBRATE),
         ]
         for text, page_idx in nav_items:
             btn = QPushButton(text)

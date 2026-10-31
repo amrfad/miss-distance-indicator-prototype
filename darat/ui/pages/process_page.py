@@ -171,17 +171,17 @@ class ProcessPage(QWidget):
 
         # Button row — file navigation
         btn_row = QHBoxLayout()
-        self._process_btn = QPushButton("▶  PROCESS SELECTED")
+        self._process_btn = QPushButton("PROCESS SELECTED")
         self._process_btn.setObjectName("btnPrimary")
         self._process_btn.clicked.connect(self._process_selected)
         btn_row.addWidget(self._process_btn)
 
-        change_btn = QPushButton("📁  CHANGE DIR")
+        change_btn = QPushButton("CHANGE DIR")
         change_btn.clicked.connect(self._change_directory)
         btn_row.addWidget(change_btn)
 
-        refresh_btn = QPushButton("↻")
-        refresh_btn.setFixedWidth(34)
+        refresh_btn = QPushButton("REFRESH")
+        refresh_btn.setMinimumWidth(70)
         refresh_btn.clicked.connect(self._refresh_file_list)
         btn_row.addWidget(refresh_btn)
         ll.addLayout(btn_row)
@@ -200,12 +200,12 @@ class ProcessPage(QWidget):
 
         method_btn_row = QHBoxLayout()
 
-        refresh_method_btn = QPushButton("↻  Refresh Methods")
+        refresh_method_btn = QPushButton("Refresh Methods")
         refresh_method_btn.setToolTip("Reload available calculation methods")
         refresh_method_btn.clicked.connect(self._on_refresh_methods)
         method_btn_row.addWidget(refresh_method_btn)
 
-        add_method_btn = QPushButton("➕  Add Custom Method…")
+        add_method_btn = QPushButton("Add Custom Method…")
         add_method_btn.setObjectName("btnSave")
         add_method_btn.setToolTip(
             "Add a .py file implementing solve() as a custom SSL method"
@@ -215,7 +215,7 @@ class ProcessPage(QWidget):
 
         mg_layout.addLayout(method_btn_row)
 
-        self._custom_folder_lbl = QLabel(f"📂 Custom folder: {self._custom_folder}")
+        self._custom_folder_lbl = QLabel(f"Custom folder: {self._custom_folder}")
         self._custom_folder_lbl.setObjectName("statusValue")
         self._custom_folder_lbl.setWordWrap(True)
         mg_layout.addWidget(self._custom_folder_lbl)
@@ -245,7 +245,7 @@ class ProcessPage(QWidget):
         self._log_area.setReadOnly(True)
         rl.addWidget(self._log_area, stretch=1)
 
-        self._view_viz_btn = QPushButton("📊  OPEN IN VISUALIZE")
+        self._view_viz_btn = QPushButton("OPEN IN VISUALIZE")
         self._view_viz_btn.setObjectName("btnSave")
         self._view_viz_btn.setVisible(False)
         self._view_viz_btn.clicked.connect(self._open_in_visualize)
