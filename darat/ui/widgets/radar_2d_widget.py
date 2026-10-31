@@ -9,7 +9,7 @@ Fitur:
 - Posisi geometris 6 mikrofon fisik (toggleable).
 - Vektor perlintasan Miss Distance radial dari pusat target (0, 0).
 - Penanda khusus PCA (Point of Closest Approach / Miss Distance minimum) berkedip merah.
-- Hover tooltip komprehensif (X, Y, Z, Miss Distance 2D/3D, Clock Bearing).
+- Hover tooltip 2D ringkas (X, Y, Miss Distance, Clock Bearing).
 - Interaksi zoom (scroll-wheel & tombol +/-), auto-fit, serta highlight event terpilih.
 """
 
@@ -142,19 +142,15 @@ class _RadarCanvas2D(QWidget):
             if math.hypot(dx, dy) < THRESHOLD:
                 x = float(ev.get("x", 0.0))
                 y = float(ev.get("y", 0.0))
-                z = float(ev.get("z", 0.0))
                 num = ev.get("event_number", "?")
-                r_2d = math.hypot(x, y)
-                r_3d = math.hypot(r_2d, z)
+                r_miss = math.hypot(x, y)
                 clock, deg = _calc_clock_bearing(x, y)
 
                 tip = (
                     f"EVENT #{num}\n"
                     f"X = {x:+.2f} m\n"
                     f"Y = {y:+.2f} m\n"
-                    f"Z (Alt) = {z:+.2f} m\n"
-                    f"Miss Dist (2D) = {r_2d:.2f} m\n"
-                    f"Miss Dist (3D) = {r_3d:.2f} m\n"
+                    f"Miss Distance = {r_miss:.2f} m\n"
                     f"Bearing = {clock} o'clock ({deg:.1f}°)"
                 )
                 QToolTip.showText(event.globalPosition().toPoint(), tip, self)
@@ -286,7 +282,6 @@ class _RadarCanvas2D(QWidget):
             for v in self._vertices
         ]
 
-        # Urutkan face berdasarkan Z (elevasi) dari bawah ke atas
         faces_sorted = sorted(
             enumerate(self._faces),
             key=lambda item: self._centroids[item[0]][2]
@@ -327,7 +322,6 @@ class _RadarCanvas2D(QWidget):
             x, y = float(pos[0]), float(pos[1])
             pt = self._world_to_screen(x, y, center, radius)
 
-            # Gambar segitiga kecil untuk mic
             tri = QPolygonF([
                 QPointF(pt.x(), pt.y() - 4.5),
                 QPointF(pt.x() - 3.5, pt.y() + 3.0),
@@ -337,7 +331,6 @@ class _RadarCanvas2D(QWidget):
             p.setPen(QPen(_C_MIC.lighter(130), 0.8))
             p.drawPolygon(tri)
 
-            # Label nama mic
             p.setPen(_C_MIC)
             p.drawText(int(pt.x() + 5), int(pt.y() - 2), mic_name)
 
@@ -354,26 +347,25 @@ class _RadarCanvas2D(QWidget):
 
         p.setFont(QFont("IBM Plex Mono", 8, QFont.Weight.Bold))
 
-        # Cari event dengan jarak miss terdekat (PCA: Point of Closest Approach)
+        # Cari event dengan jarak miss terdekat (PCA: Point of Closest Approach) di bidang 2D
         valid_evs = [e for e in self._events if e.get("valid", False)]
         pca_event_num = None
         if valid_evs:
-            min_ev = min(valid_evs, key=lambda e: math.hypot(e.get("x", 0.0), e.get("y", 0.0), e.get("z", 0.0)))
+            min_ev = min(valid_evs, key=lambda e: math.hypot(e.get("x", 0.0), e.get("y", 0.0)))
             pca_event_num = min_ev.get("event_number")
 
         for ev in valid_evs:
             x = float(ev.get("x", 0.0))
             y = float(ev.get("y", 0.0))
-            z = float(ev.get("z", 0.0))
             num = ev.get("event_number", "?")
             is_pca = (num == pca_event_num)
             is_highlighted = (num == self._highlighted_event_num)
 
-            r_2d = math.hypot(x, y)
-            oob = r_2d > self._max_range
+            r_miss = math.hypot(x, y)
+            oob = r_miss > self._max_range
 
             if oob:
-                scale = (self._max_range * 0.96) / r_2d
+                scale = (self._max_range * 0.96) / r_miss
                 draw_x, draw_y = x * scale, y * scale
             else:
                 draw_x, draw_y = x, y
@@ -392,7 +384,6 @@ class _RadarCanvas2D(QWidget):
 
             # Render Blip Titik Kejadian
             if is_pca:
-                # Titik merah tebal berkedip/ganda untuk PCA
                 glow = QColor(_C_EVENT_PCA)
                 glow.setAlpha(60)
                 p.setBrush(QBrush(glow))
@@ -404,10 +395,9 @@ class _RadarCanvas2D(QWidget):
                 p.drawEllipse(pt, 6, 6)
 
                 p.setPen(_C_EVENT_PCA)
-                label = f"E{num} ({r_2d:.2f}m) [PCA]"
+                label = f"E{num} ({r_miss:.2f}m) [PCA]"
                 p.drawText(int(pt.x() + 10), int(pt.y() + 4), label)
             elif is_highlighted:
-                # Cyan highlight untuk event yang diklik di tabel
                 glow = QColor(_C_EVENT_HL)
                 glow.setAlpha(80)
                 p.setBrush(QBrush(glow))
@@ -422,7 +412,6 @@ class _RadarCanvas2D(QWidget):
                 p.drawText(int(pt.x() + 8), int(pt.y() - 3), f"E{num} (SEL)")
             else:
                 color = _C_EVENT_OOB if oob else _C_EVENT
-                # Halo glow
                 glow = QColor(color)
                 glow.setAlpha(40)
                 p.setBrush(QBrush(glow))
@@ -553,7 +542,6 @@ class Radar2DWidget(QWidget):
 
         dists = [math.hypot(e.get("x", 0.0), e.get("y", 0.0)) for e in valid_evs]
         max_d = max(dists) if dists else 10.0
-        # Bulatkan ke atas kelipatan 2.5m dengan margin 25%
         fit_r = max(_ZOOM_MIN, math.ceil(max_d * 1.25 / 2.5) * 2.5)
         self.set_range(fit_r)
 

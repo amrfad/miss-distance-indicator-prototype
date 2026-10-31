@@ -1,14 +1,13 @@
 # darat/ui/pages/visualize_page.py
 """Visualize Page — Native PySide6 Tactical 2D Radar (XY Plane) & Telemetry HUD.
 
-Menggantikan visualisasi isometrik 3D dengan tampilan 2D bidang horizontal (XY)
-berbasis radar polar taktis yang seragam, intuitif, dan responsif:
+Menampilkan visualisasi 2D bidang horizontal (XY) berbasis radar polar taktis:
 - Radar polar cincin konsentris (range rings) & 12 sektor arah kardinal (N/S/E/W).
 - Titik kejadian (Miss Distance event points) dengan garis vektor radial ke pusat target (0,0).
 - Penandaan khusus untuk kejadian dengan jarak luput terdekat (Point of Closest Approach / PCA).
 - Siluet 2D pesawat tampak atas dan letak 6 mikrofon fisik (toggleable).
-- HUD Telemetry Card: Ringkasan PCA, Clock Bearing, Total Events, Valid/Failed.
-- Tabel Telemetry Event interaktif dengan penyorotan dua arah (klik baris tabel <-> blip radar).
+- HUD Telemetry Panel & Event Table di sebelah KANAN radar secara horizontal.
+- Sinkronisasi dua arah (klik baris tabel <-> sorotan blip radar).
 """
 
 import glob
@@ -72,10 +71,10 @@ class VisualizePage(QWidget):
         main_splitter.setHandleWidth(4)
         root.addWidget(main_splitter, stretch=1)
 
-        # ── LEFT: file selection ─────────────────────────────────────────
+        # ── KIRI: File selection ─────────────────────────────────────────
         left = QFrame()
         left.setObjectName("card")
-        left.setFixedWidth(260)
+        left.setFixedWidth(240)
         ll = QVBoxLayout(left)
         ll.setContentsMargins(10, 10, 10, 10)
         ll.setSpacing(8)
@@ -110,70 +109,76 @@ class VisualizePage(QWidget):
 
         main_splitter.addWidget(left)
 
-        # ── RIGHT: visualisasi 2D & Telemetry HUD ─────────────────────────
-        right = QFrame()
-        right.setObjectName("card")
-        rl = QVBoxLayout(right)
-        rl.setContentsMargins(6, 6, 6, 6)
-        rl.setSpacing(6)
-
-        right_splitter = QSplitter(Qt.Orientation.Vertical)
-        right_splitter.setHandleWidth(4)
-        right_splitter.setChildrenCollapsible(False)
+        # ── KANAN: Radar 2D (kiri) & Telemetry/Tabel (kanan) ──────────────
+        viz_splitter = QSplitter(Qt.Orientation.Horizontal)
+        viz_splitter.setHandleWidth(4)
+        viz_splitter.setChildrenCollapsible(False)
 
         # 1. Canvas Radar 2D Taktis
+        radar_container = QFrame()
+        radar_container.setObjectName("card")
+        radar_layout = QVBoxLayout(radar_container)
+        radar_layout.setContentsMargins(6, 6, 6, 6)
+        radar_layout.setSpacing(4)
+
         self._radar = Radar2DWidget()
         self._radar.event_selected.connect(self._on_radar_event_selected)
-        right_splitter.addWidget(self._radar)
+        radar_layout.addWidget(self._radar)
+        viz_splitter.addWidget(radar_container)
 
-        # 2. Panel Telemetri & Event Table
+        # 2. Panel Telemetri & Tabel Event (di sebelah KANAN radar)
         telemetry_panel = QFrame()
-        telemetry_panel.setStyleSheet(
-            "background-color: #060d06; border: 1px solid #1a4a1a; border-radius: 6px;"
-        )
+        telemetry_panel.setObjectName("card")
+        telemetry_panel.setMinimumWidth(330)
         tl = QVBoxLayout(telemetry_panel)
         tl.setContentsMargins(8, 8, 8, 8)
-        tl.setSpacing(6)
+        tl.setSpacing(8)
 
-        # Telemetry Stat Bar / Metric Chips
-        metric_row = QHBoxLayout()
-        metric_row.setSpacing(8)
+        panel_title = QLabel("TACTICAL TELEMETRY")
+        panel_title.setStyleSheet(
+            "color: #33cc33; font-family: 'IBM Plex Mono'; font-weight: bold; font-size: 11px;"
+        )
+        tl.addWidget(panel_title)
 
+        # Telemetry Stat Cards
         chip_style = (
             "background-color: #0d200d; border: 1px solid #1a4a1a; border-radius: 4px; "
-            "padding: 4px 8px; font-family: 'IBM Plex Mono'; font-size: 10px; font-weight: bold;"
+            "padding: 5px 8px; font-family: 'IBM Plex Mono'; font-size: 10px; font-weight: bold;"
         )
 
+        stat_row1 = QHBoxLayout()
+        stat_row1.setSpacing(6)
         self._chip_total = QLabel("TOTAL: --")
         self._chip_total.setStyleSheet(chip_style + " color: #88cc88;")
-        metric_row.addWidget(self._chip_total)
+        stat_row1.addWidget(self._chip_total)
 
         self._chip_valid = QLabel("VALID: --")
         self._chip_valid.setStyleSheet(chip_style + " color: #33cc33;")
-        metric_row.addWidget(self._chip_valid)
+        stat_row1.addWidget(self._chip_valid)
 
         self._chip_failed = QLabel("FAILED: --")
         self._chip_failed.setStyleSheet(chip_style + " color: #cc6633;")
-        metric_row.addWidget(self._chip_failed)
+        stat_row1.addWidget(self._chip_failed)
+        tl.addLayout(stat_row1)
 
+        stat_row2 = QHBoxLayout()
+        stat_row2.setSpacing(6)
         self._chip_pca = QLabel("PCA: --")
         self._chip_pca.setStyleSheet(
             chip_style + " color: #ff3333; border-color: #aa2222; background-color: #200d0d;"
         )
-        metric_row.addWidget(self._chip_pca)
+        stat_row2.addWidget(self._chip_pca)
 
         self._chip_bearing = QLabel("BEARING: --")
         self._chip_bearing.setStyleSheet(chip_style + " color: #33bbff;")
-        metric_row.addWidget(self._chip_bearing)
+        stat_row2.addWidget(self._chip_bearing)
+        tl.addLayout(stat_row2)
 
-        metric_row.addStretch()
-        tl.addLayout(metric_row)
-
-        # Tabel Event Telemetry
+        # Tabel Event Telemetry (Hanya metrik 2D)
         self._table = QTableWidget()
-        self._table.setColumnCount(8)
+        self._table.setColumnCount(6)
         self._table.setHorizontalHeaderLabels([
-            "Event", "X (m)", "Y (m)", "Z (m)", "Miss 2D (m)", "Miss 3D (m)", "Bearing", "Status"
+            "Event", "X (m)", "Y (m)", "Miss Dist (m)", "Bearing", "Status"
         ])
         self._table.verticalHeader().setVisible(False)
         self._table.setAlternatingRowColors(True)
@@ -185,7 +190,7 @@ class VisualizePage(QWidget):
             "color: #99dd99; gridline-color: #143514; font-family: 'IBM Plex Mono'; font-size: 10px; "
             "border: 1px solid #1a4a1a; selection-background-color: #1a4d2e; selection-color: #ffffff; } "
             "QHeaderView::section { background-color: #0d200d; color: #33cc33; font-family: 'IBM Plex Mono'; "
-            "font-weight: bold; font-size: 9px; border: 1px solid #1a4a1a; padding: 3px; }"
+            "font-weight: bold; font-size: 9px; border: 1px solid #1a4a1a; padding: 4px; }"
         )
         self._table.itemSelectionChanged.connect(self._on_table_selection_changed)
 
@@ -195,18 +200,22 @@ class VisualizePage(QWidget):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
 
-        right_splitter.addWidget(telemetry_panel)
-        right_splitter.setSizes([460, 200])
-
-        rl.addWidget(right_splitter)
         tl.addWidget(self._table, stretch=1)
 
-        main_splitter.addWidget(right)
-        main_splitter.setSizes([260, 920])
+        # Petunjuk di bawah tabel
+        hint_lbl = QLabel("Hint: Klik baris tabel untuk menyorot event di radar.")
+        hint_lbl.setStyleSheet(
+            "color: #1a7a1a; font-family: 'IBM Plex Mono'; font-size: 9px; border: none;"
+        )
+        tl.addWidget(hint_lbl)
+
+        viz_splitter.addWidget(telemetry_panel)
+        viz_splitter.setSizes([560, 380])
+
+        main_splitter.addWidget(viz_splitter)
+        main_splitter.setSizes([240, 940])
 
     # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -281,24 +290,22 @@ class VisualizePage(QWidget):
         self._radar.set_data(events, mic_positions)
         self._radar.auto_fit()
 
-        # 2. Hitung Metrik & PCA (Point of Closest Approach)
-        pca_ev = min(valid, key=lambda e: math.hypot(e.get("x", 0.0), e.get("y", 0.0), e.get("z", 0.0)))
+        # 2. Hitung Metrik & PCA (Point of Closest Approach) di bidang 2D
+        pca_ev = min(valid, key=lambda e: math.hypot(e.get("x", 0.0), e.get("y", 0.0)))
         pca_num = pca_ev.get("event_number", "?")
         pca_x = float(pca_ev.get("x", 0.0))
         pca_y = float(pca_ev.get("y", 0.0))
-        pca_z = float(pca_ev.get("z", 0.0))
-        pca_r2d = math.hypot(pca_x, pca_y)
-        pca_r3d = math.hypot(pca_r2d, pca_z)
+        pca_dist = math.hypot(pca_x, pca_y)
         pca_clock, pca_deg = _calc_clock_bearing(pca_x, pca_y)
 
         # 3. Update Metric Chips
         self._chip_total.setText(f"TOTAL: {len(events)}")
         self._chip_valid.setText(f"VALID: {len(valid)}")
         self._chip_failed.setText(f"FAILED: {failed_count}")
-        self._chip_pca.setText(f"PCA: {pca_r2d:.2f}m (E{pca_num})")
+        self._chip_pca.setText(f"PCA: {pca_dist:.2f}m (E{pca_num})")
         self._chip_bearing.setText(f"BEARING: {pca_clock} ({pca_deg:.0f}°)")
 
-        # 4. Isi Tabel Event
+        # 4. Isi Tabel Event (6 kolom 2D murni)
         self._table.blockSignals(True)
         self._table.setRowCount(len(events))
 
@@ -312,30 +319,25 @@ class VisualizePage(QWidget):
             if is_valid:
                 x = float(ev.get("x", 0.0))
                 y = float(ev.get("y", 0.0))
-                z = float(ev.get("z", 0.0))
-                r2d = math.hypot(x, y)
-                r3d = math.hypot(r2d, z)
+                r_miss = math.hypot(x, y)
                 clock, deg = _calc_clock_bearing(x, y)
 
                 col_texts = [
                     f"E{num}",
                     f"{x:+.3f}",
                     f"{y:+.3f}",
-                    f"{z:+.3f}",
-                    f"{r2d:.3f}",
-                    f"{r3d:.3f}",
+                    f"{r_miss:.3f}",
                     f"{clock} ({deg:.0f}°)",
                     "VALID [PCA]" if is_pca else "VALID",
                 ]
             else:
-                col_texts = [f"E{num}", "—", "—", "—", "—", "—", "—", "FAILED"]
+                col_texts = [f"E{num}", "—", "—", "—", "—", "FAILED"]
 
             for col, text in enumerate(col_texts):
                 item = QTableWidgetItem(text)
                 item.setFont(mono_font)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
-                # Custom color coding
                 if is_pca:
                     item.setForeground(QColor("#ff5555"))
                 elif is_valid:
@@ -348,7 +350,7 @@ class VisualizePage(QWidget):
         self._table.blockSignals(False)
 
         self.log_message.emit(
-            f"Visualization updated: {name} ({len(valid)} valid events, PCA: {pca_r2d:.2f}m @ E{pca_num})",
+            f"Visualization updated: {name} ({len(valid)} valid events, PCA: {pca_dist:.2f}m @ E{pca_num})",
             "INFO"
         )
 

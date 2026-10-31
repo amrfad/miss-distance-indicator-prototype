@@ -197,10 +197,15 @@ def save_results_to_file(data: dict, events_results: list,
             clusters_info = result.get("clusters_info", None)
 
             if estimated_pos is not None:
-                f.write(
-                    f"e{event_num} = [{estimated_pos[0]:.2f}, "
-                    f"{estimated_pos[1]:.2f}, {estimated_pos[2]:.2f}]\n"
-                )
+                if len(estimated_pos) == 2:
+                    f.write(
+                        f"e{event_num} = [{estimated_pos[0]:.2f}, {estimated_pos[1]:.2f}]\n"
+                    )
+                else:
+                    f.write(
+                        f"e{event_num} = [{estimated_pos[0]:.2f}, "
+                        f"{estimated_pos[1]:.2f}, {estimated_pos[2]:.2f}]\n"
+                    )
                 if clusters_info:
                     for line in clusters_info:
                         f.write(f"  {line}\n")

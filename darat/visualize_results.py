@@ -37,21 +37,36 @@ def parse_results_file(filename):
 
             # Parse event positions
             elif line.startswith("e"):
-                # Format: e1 = [x, y, z] atau e1 = FAILED
-                match = re.match(
+                # Format: e1 = [x, y, z] atau e1 = [x, y] atau e1 = FAILED
+                match_3d = re.match(
                     r"e(\d+)\s*=\s*\[([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\]", line
                 )
-                if match:
-                    event_num = int(match.group(1))
-                    x = float(match.group(2))
-                    y = float(match.group(3))
-                    z = float(match.group(4))
+                match_2d = re.match(
+                    r"e(\d+)\s*=\s*\[([-\d.]+),\s*([-\d.]+)\]", line
+                )
+                if match_3d:
+                    event_num = int(match_3d.group(1))
+                    x = float(match_3d.group(2))
+                    y = float(match_3d.group(3))
+                    z = float(match_3d.group(4))
                     events.append(
                         {
                             "event_number": event_num,
                             "x": x,
                             "y": y,
                             "z": z,
+                            "valid": True,
+                        }
+                    )
+                elif match_2d:
+                    event_num = int(match_2d.group(1))
+                    x = float(match_2d.group(2))
+                    y = float(match_2d.group(3))
+                    events.append(
+                        {
+                            "event_number": event_num,
+                            "x": x,
+                            "y": y,
                             "valid": True,
                         }
                     )

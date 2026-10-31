@@ -1,5 +1,6 @@
 """
-Unit tests for 2D XY visualization (Radar2DWidget, VisualizePage, and visualize_2d_xy).
+Unit tests for 2D XY visualization (Radar2DWidget, VisualizePage, and visualize_2d_xy)
+and 2D localization algorithms (rotating_multilat_2d, chan_ho_2d).
 """
 
 import os
@@ -20,6 +21,7 @@ app = QApplication.instance() or QApplication(sys.argv)
 from darat.visualize_results import parse_results_file, visualize_2d_xy
 from darat.ui.widgets.radar_2d_widget import Radar2DWidget, _calc_clock_bearing
 from darat.ui.pages.visualize_page import VisualizePage
+from darat.localization import ssl_registry
 
 
 class TestVisualize2D(unittest.TestCase):
@@ -28,6 +30,7 @@ class TestVisualize2D(unittest.TestCase):
         self.sample_results_path = os.path.join(
             PROJECT_ROOT, "tests", "darat", "fixtures", "sample_results.txt"
         )
+        ssl_registry.initialize()
 
     def test_calc_clock_bearing(self):
         """Test konversi koordinat (x, y) ke orientasi arah jarum jam."""
@@ -88,8 +91,8 @@ class TestVisualize2D(unittest.TestCase):
         radar.clear()
         self.assertEqual(len(radar.canvas._events), 0)
 
-    def test_visualize_page_load_and_select(self):
-        """Test VisualizePage mampu membaca direktori fixtures dan mempopulasikan tabel."""
+    def test_visualize_page_layout_and_2d_table(self):
+        """Test VisualizePage dengan tabel 2D 6 kolom di sebelah kanan radar."""
         fixtures_dir = os.path.join(PROJECT_ROOT, "tests", "darat", "fixtures")
         page = VisualizePage(working_dir=fixtures_dir)
 
@@ -100,15 +103,34 @@ class TestVisualize2D(unittest.TestCase):
         # Visualize
         page._visualize_selected()
 
-        # Verifikasi metric chips dan tabel terisi
+        # Verifikasi metric chips terisi
         self.assertNotEqual(page._chip_total.text(), "TOTAL: --")
         self.assertNotEqual(page._chip_valid.text(), "VALID: --")
         self.assertIn("PCA:", page._chip_pca.text())
+
+        # Verifikasi tabel 2D: tepat 6 kolom (Event, X, Y, Miss Dist, Bearing, Status)
+        self.assertEqual(page._table.columnCount(), 6)
         self.assertGreater(page._table.rowCount(), 0)
 
-        # Verifikasi interaksi klik tabel
+        headers = [page._table.horizontalHeaderItem(i).text() for i in range(6)]
+        self.assertEqual(
+            headers,
+            ["Event", "X (m)", "Y (m)", "Miss Dist (m)", "Bearing", "Status"]
+        )
+
+        # Verifikasi interaksi klik tabel menyorot radar
         page._table.selectRow(0)
         self.assertIsNotNone(page._radar.canvas._highlighted_event_num)
+
+    def test_2d_algorithms_registered(self):
+        """Test algoritma 2D terdaftar di ssl_registry dan dapat di-resolve."""
+        rot2d = ssl_registry.get_method("rotating_multilat_2d")
+        self.assertIsNotNone(rot2d)
+        self.assertEqual(rot2d.display_name, "Rotating Multilateration 2D")
+
+        chan2d = ssl_registry.get_method("chan_ho_2d")
+        self.assertIsNotNone(chan2d)
+        self.assertEqual(chan2d.display_name, "Chan-Ho WLS 2D")
 
 
 if __name__ == "__main__":

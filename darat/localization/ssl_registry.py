@@ -48,10 +48,12 @@ class MethodEntry:
 _registry: Dict[str, MethodEntry] = {}
 
 # Urutan tampilan default: nama key built-in yang harus muncul pertama
-_BUILTIN_ORDER = ["bucher_misra", "chan_ho", "pivot", "consensus", "density_consensus", "rotating_multilat"]
+_BUILTIN_ORDER = ["rotating_multilat_2d", "chan_ho_2d", "bucher_misra", "chan_ho", "pivot", "consensus", "density_consensus", "rotating_multilat"]
 
 # Nama modul built-in yang diketahui beserta package-nya
 _BUILTIN_MODULES = {
+    "rotating_multilat_2d": "darat.localization.builtin_ssl.rotating_multilat_2d",
+    "chan_ho_2d": "darat.localization.builtin_ssl.chan_ho_2d",
     "bucher_misra": "darat.localization.builtin_ssl.bucher_misra",
     "chan_ho":       "darat.localization.builtin_ssl.chan_ho",
     "pivot":         "darat.localization.builtin_ssl.pivot",
