@@ -123,6 +123,12 @@ class TestVisualize2D(unittest.TestCase):
             ["Event", "X (m)", "Y (m)", "Miss Dist (m)", "Bearing", "Status"]
         )
 
+        # Verifikasi status seragam (tanpa tag [PCA])
+        for r in range(page._table.rowCount()):
+            status_text = page._table.item(r, 5).text()
+            self.assertIn(status_text, ["VALID", "FAILED"])
+            self.assertNotIn("[PCA]", status_text)
+
         # Verifikasi interaksi klik tabel menyorot radar
         page._table.selectRow(0)
         self.assertIsNotNone(page._radar.canvas._highlighted_event_num)

@@ -4,7 +4,7 @@
 Menampilkan visualisasi 2D bidang horizontal (XY) berbasis radar polar taktis:
 - Radar polar cincin konsentris (range rings) & 12 sektor arah kardinal (N/S/E/W).
 - Titik kejadian (Miss Distance event points) dengan garis vektor radial ke pusat target (0,0).
-- Penandaan khusus untuk kejadian dengan jarak luput terdekat (Point of Closest Approach / PCA).
+- Visualisasi seragam titik event & ringkasan statistik telemetri.
 - Siluet 2D pesawat tampak atas dan letak 6 mikrofon fisik (toggleable).
 - HUD Telemetry Panel & Event Table di sebelah KANAN radar secara horizontal.
 - Sinkronisasi dua arah (klik baris tabel <-> sorotan blip radar).
@@ -164,9 +164,7 @@ class VisualizePage(QWidget):
         stat_row2 = QHBoxLayout()
         stat_row2.setSpacing(6)
         self._chip_pca = QLabel("PCA: --")
-        self._chip_pca.setStyleSheet(
-            chip_style + " color: #ff3333; border-color: #aa2222; background-color: #200d0d;"
-        )
+        self._chip_pca.setStyleSheet(chip_style + " color: #33cc33;")
         stat_row2.addWidget(self._chip_pca)
 
         self._chip_bearing = QLabel("BEARING: --")
@@ -314,7 +312,6 @@ class VisualizePage(QWidget):
         for row, ev in enumerate(events):
             num = ev.get("event_number", row + 1)
             is_valid = ev.get("valid", False)
-            is_pca = (num == pca_num and is_valid)
 
             if is_valid:
                 x = float(ev.get("x", 0.0))
@@ -328,7 +325,7 @@ class VisualizePage(QWidget):
                     f"{y:+.3f}",
                     f"{r_miss:.3f}",
                     f"{clock} ({deg:.0f}°)",
-                    "VALID [PCA]" if is_pca else "VALID",
+                    "VALID",
                 ]
             else:
                 col_texts = [f"E{num}", "—", "—", "—", "—", "FAILED"]
@@ -338,9 +335,7 @@ class VisualizePage(QWidget):
                 item.setFont(mono_font)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
-                if is_pca:
-                    item.setForeground(QColor("#ff5555"))
-                elif is_valid:
+                if is_valid:
                     item.setForeground(QColor("#88ee88"))
                 else:
                     item.setForeground(QColor("#ff7733"))

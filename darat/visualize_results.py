@@ -435,33 +435,33 @@ def visualize_2d_xy(events, filename, mic_positions=None):
         x, y, z = ev["x"], ev["y"], ev["z"]
         num = ev["event_number"]
         r2d = math.hypot(x, y)
-        is_pca = (num == pca_num)
+
 
         ax.plot(
             [0, x], [0, y],
-            color="#ff3333" if is_pca else "#ffff00",
-            linestyle="--" if is_pca else ":",
-            linewidth=1.4 if is_pca else 0.8,
+            color="#ffff00",
+            linestyle=":",
+            linewidth=0.8,
             alpha=0.85,
         )
 
         ax.plot(
             x, y,
             marker="o",
-            color="#ff3333" if is_pca else "#ffff00",
-            markersize=9 if is_pca else 6,
-            markeredgecolor="white" if is_pca else "#888800",
+            color="#ffff00",
+            markersize=6,
+            markeredgecolor="#888800",
             markeredgewidth=1.2,
         )
 
-        label = f" E{num} ({r2d:.2f}m)" + (" [PCA]" if is_pca else "")
+        label = f" E{num} ({r2d:.2f}m)"
         ax.text(
             x + 0.15, y + 0.15,
             label,
-            color="#ff5555" if is_pca else "#ffff66",
+            color="#ffff66",
             fontsize=8,
             fontfamily="monospace",
-            fontweight="bold" if is_pca else "normal",
+            fontweight="normal",
         )
 
     ax.set_xlim(-radar_range * 1.15, radar_range * 1.15)

@@ -8,7 +8,7 @@ Fitur:
 - Proyeksi siluet drone 2D top-down (toggleable).
 - Posisi geometris 6 mikrofon fisik (toggleable).
 - Vektor perlintasan Miss Distance radial dari pusat target (0, 0).
-- Penanda khusus PCA (Point of Closest Approach / Miss Distance minimum) berkedip merah.
+- Penanda event visual seragam & seleksi highlight interaktif.
 - Hover tooltip 2D ringkas (X, Y, Miss Distance, Clock Bearing).
 - Interaksi zoom (scroll-wheel & tombol +/-), auto-fit, serta highlight event terpilih.
 """
@@ -38,7 +38,6 @@ _C_TEXT       = QColor("#33cc33")
 _C_TEXT_DIM   = QColor("#1a7a1a")
 _C_CROSSHAIR  = QColor("#33cc33")
 _C_EVENT      = QColor("#ffff00")
-_C_EVENT_PCA  = QColor("#ff3333")
 _C_EVENT_OOB  = QColor("#ff6600")
 _C_EVENT_HL   = QColor("#00ffff")   # Cyan highlight untuk event terpilih
 _C_MIC        = QColor("#3399ff")   # Biru untuk marker mic
@@ -347,18 +346,12 @@ class _RadarCanvas2D(QWidget):
 
         p.setFont(QFont("IBM Plex Mono", 8, QFont.Weight.Bold))
 
-        # Cari event dengan jarak miss terdekat (PCA: Point of Closest Approach) di bidang 2D
         valid_evs = [e for e in self._events if e.get("valid", False)]
-        pca_event_num = None
-        if valid_evs:
-            min_ev = min(valid_evs, key=lambda e: math.hypot(e.get("x", 0.0), e.get("y", 0.0)))
-            pca_event_num = min_ev.get("event_number")
 
         for ev in valid_evs:
             x = float(ev.get("x", 0.0))
             y = float(ev.get("y", 0.0))
             num = ev.get("event_number", "?")
-            is_pca = (num == pca_event_num)
             is_highlighted = (num == self._highlighted_event_num)
 
             r_miss = math.hypot(x, y)
@@ -374,30 +367,14 @@ class _RadarCanvas2D(QWidget):
             self._projected_events.append((pt, ev))
 
             # Garis vektor radial ke pusat target (0,0)
-            if is_pca:
-                p.setPen(QPen(_C_EVENT_PCA, 1.2, Qt.PenStyle.DashLine))
-            elif is_highlighted:
+            if is_highlighted:
                 p.setPen(QPen(_C_EVENT_HL, 1.0, Qt.PenStyle.DashLine))
             else:
                 p.setPen(QPen(_C_EVENT, 0.7, Qt.PenStyle.DotLine))
             p.drawLine(center, pt)
 
-            # Render Blip Titik Kejadian
-            if is_pca:
-                glow = QColor(_C_EVENT_PCA)
-                glow.setAlpha(60)
-                p.setBrush(QBrush(glow))
-                p.setPen(Qt.PenStyle.NoPen)
-                p.drawEllipse(pt, 12, 12)
-
-                p.setPen(QPen(_C_EVENT_PCA, 2.0))
-                p.setBrush(QBrush(QColor(255, 50, 50, 200)))
-                p.drawEllipse(pt, 6, 6)
-
-                p.setPen(_C_EVENT_PCA)
-                label = f"E{num} ({r_miss:.2f}m) [PCA]"
-                p.drawText(int(pt.x() + 10), int(pt.y() + 4), label)
-            elif is_highlighted:
+            # Render Blip Titik Kejadian (semua event diperlakukan seragam)
+            if is_highlighted:
                 glow = QColor(_C_EVENT_HL)
                 glow.setAlpha(80)
                 p.setBrush(QBrush(glow))
