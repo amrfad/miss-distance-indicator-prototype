@@ -70,7 +70,7 @@ class _ProcessWorker(QObject):
 
             if pos is not None:
                 self.progress.emit(
-                    f"Position  : [{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}] m"
+                    (f"Position  : [{pos[0]:.3f}, {pos[1]:.3f}] m" if len(pos) == 2 else f"Position  : [{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}] m")
                 )
                 if cluster_size is not None:
                     self.progress.emit(f"Cluster   : {cluster_size} consistent solutions")

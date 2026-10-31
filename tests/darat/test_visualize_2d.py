@@ -3,6 +3,7 @@ Unit tests for 2D XY visualization (Radar2DWidget, VisualizePage, and visualize_
 and 2D localization algorithms (rotating_multilat_2d, chan_ho_2d).
 """
 
+import json
 import os
 import sys
 import unittest
@@ -22,6 +23,7 @@ from darat.visualize_results import parse_results_file, visualize_2d_xy
 from darat.ui.widgets.radar_2d_widget import Radar2DWidget, _calc_clock_bearing
 from darat.ui.pages.visualize_page import VisualizePage
 from darat.localization import ssl_registry
+from darat.localization.process_json_tdoa import process_event_tdoa
 
 
 class TestVisualize2D(unittest.TestCase):
@@ -29,6 +31,9 @@ class TestVisualize2D(unittest.TestCase):
     def setUp(self):
         self.sample_results_path = os.path.join(
             PROJECT_ROOT, "tests", "darat", "fixtures", "sample_results.txt"
+        )
+        self.sample_tdoa_path = os.path.join(
+            PROJECT_ROOT, "tests", "darat", "fixtures", "sample_tdoa.json"
         )
         ssl_registry.initialize()
 
@@ -131,6 +136,38 @@ class TestVisualize2D(unittest.TestCase):
         chan2d = ssl_registry.get_method("chan_ho_2d")
         self.assertIsNotNone(chan2d)
         self.assertEqual(chan2d.display_name, "Chan-Ho WLS 2D")
+
+    def test_2d_algorithms_process_events(self):
+        """Test pemrosesan event TDOA menggunakan metode 2D menghasilkan posisi 2 elemen [x, y]."""
+        with open(self.sample_tdoa_path, "r") as f:
+            data = json.load(f)
+
+        events = data.get("events", [])
+        self.assertTrue(len(events) > 0)
+
+        # Posisi mikrofon default 6 mic
+        mic_positions = {
+            "mic0": [-0.60,  0.00,  0.00],
+            "mic1": [-0.20, -0.60,  0.00],
+            "mic2": [ 0.20, -0.60,  0.00],
+            "mic3": [ 0.60,  0.00,  0.00],
+            "mic4": [ 0.20,  0.60,  0.00],
+            "mic5": [-0.20,  0.60,  0.00],
+        }
+
+        # Test Rotating Multilat 2D
+        pos_rot, cluster_rot, info_rot = process_event_tdoa(
+            events[0], mic_positions, method="rotating_multilat_2d"
+        )
+        if pos_rot is not None:
+            self.assertEqual(len(pos_rot), 2)
+
+        # Test Chan-Ho 2D
+        pos_chan, cluster_chan, info_chan = process_event_tdoa(
+            events[0], mic_positions, method="chan_ho_2d"
+        )
+        if pos_chan is not None:
+            self.assertEqual(len(pos_chan), 2)
 
 
 if __name__ == "__main__":

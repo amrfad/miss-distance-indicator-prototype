@@ -299,7 +299,8 @@ def main():
         })
 
         if pos is not None:
-            print(f"Estimasi Posisi: [{pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}] m")
+            pos_str = f"[{pos[0]:.2f}, {pos[1]:.2f}]" if len(pos) == 2 else f"[{pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}]"
+            print(f"Estimasi Posisi: {pos_str} m")
             if cluster_size is not None:
                 print(f"Cluster Size   : {cluster_size} solusi konsisten")
         else:
