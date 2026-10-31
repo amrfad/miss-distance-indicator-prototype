@@ -235,10 +235,16 @@ class CommandPage(QWidget):
     def _check_device_connected(self) -> bool:
         """Check if serial port is connected. If not, display warning modal."""
         if not self._serial.is_connected():
+            is_sdr = "Sdr" in self._serial.__class__.__name__
+            msg = (
+                "SDR Radio Link is not connected.\n\nPlease ensure USRP B210 is connected and click CONNECT."
+                if is_sdr
+                else "Serial device is not connected.\n\nPlease connect the USB/Serial cable and click CONNECT."
+            )
             QMessageBox.warning(
                 self,
                 "Device Disconnected",
-                "Serial device is not connected.\n\nPlease connect the USB/Serial cable and click CONNECT.",
+                msg,
                 QMessageBox.StandardButton.Ok
             )
             return False

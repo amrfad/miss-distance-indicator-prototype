@@ -9,6 +9,7 @@ import json
 import os
 import socket
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -355,6 +356,26 @@ class SdrBridge(QObject):
                 text=True,
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
             )
+
+            def _drain_stream(stream, tag):
+                try:
+                    for line in iter(stream.readline, ''):
+                        stripped = line.strip()
+                        if stripped:
+                            # Forward relevant logs to GUI log console
+                            if any(k in stripped for k in ["[HEADLESS GROUND", "[COMMAND_TX", "[CONFIG]", "error", "Error", "ERROR"]):
+                                self.message_received.emit(f"[SDR DAEMON] {stripped}")
+                except Exception:
+                    pass
+                finally:
+                    try:
+                        stream.close()
+                    except Exception:
+                        pass
+
+            threading.Thread(target=_drain_stream, args=(self._daemon_process.stdout, "OUT"), daemon=True).start()
+            threading.Thread(target=_drain_stream, args=(self._daemon_process.stderr, "ERR"), daemon=True).start()
+
             return True
         except Exception as exc:
             self.message_received.emit(f"[SDR ERROR] Failed to spawn SDR daemon: {exc}")
@@ -444,3 +465,14 @@ class SdrBridge(QObject):
             obs = event_data.get("observed_state", "")
             sess = event_data.get("session_id", "")
             self.message_received.emit(f"[SDR STATUS] Desired: {des} | Observed: {obs} | Session: {sess}")
+
+        elif ev_type == "START_SENT":
+            sess = event_data.get("session_id", "")
+            self.message_received.emit(f"[SDR] START command sent over RF (Session: {sess})")
+
+        elif ev_type == "STOP_SENT":
+            self.message_received.emit("[SDR] STOP command sent over RF")
+
+        elif ev_type == "ERROR":
+            err_msg = event_data.get("message", "Unknown error")
+            self.message_received.emit(f"[SDR ERROR] {err_msg}")
