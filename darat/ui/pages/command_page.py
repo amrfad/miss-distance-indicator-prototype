@@ -357,14 +357,19 @@ class CommandPage(QWidget):
         self.json_list_widget.clear()
         self.last_json_header.setText("LAST JSON RECEIVED (0):")
 
-        self._rx_thread = threading.Thread(
-            target=self._jr.receive_json,
-            kwargs={"on_saved": self.json_saved.emit, "continuous": True},
-            daemon=True,
-            name="JsonReceiver-Continuous",
-        )
-        self._rx_thread.start()
-        self._log("Continuous JSON receiver started", "DEBUG")
+        if hasattr(self._serial, "json_saved"):
+            # The SDR daemon reconstructs and saves JSON itself; no serial
+            # marker receiver (or serial manager) is involved.
+            self._log("SDR JSON receiver ready", "DEBUG")
+        else:
+            self._rx_thread = threading.Thread(
+                target=self._jr.receive_json,
+                kwargs={"on_saved": self.json_saved.emit, "continuous": True},
+                daemon=True,
+                name="JsonReceiver-Continuous",
+            )
+            self._rx_thread.start()
+            self._log("Continuous JSON receiver started", "DEBUG")
         self._update_ui_state()
 
     def _on_json_saved_gui(self, filename: str):

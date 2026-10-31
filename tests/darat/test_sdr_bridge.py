@@ -8,6 +8,7 @@ import os
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
 from pathlib import Path
@@ -17,30 +18,26 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-RADIOCONDA_PYTHON = r"D:\Software\Radioconda\python.exe"
-
-
 class TestSdrHeadlessIpc(unittest.TestCase):
     """Test IPC communication with ground_unit_headless.py in mock mode."""
 
     @classmethod
     def setUpClass(cls):
-        cls.test_port = 5099
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            cls.test_port = probe.getsockname()[1]
         cls.script = _ROOT / "sdr-mdi" / "ground_unit_headless.py"
-        cls.out_dir = _ROOT / "drone_recordings"
-
-        if not os.path.exists(RADIOCONDA_PYTHON):
-            cls.python_exe = sys.executable
-        else:
-            cls.python_exe = RADIOCONDA_PYTHON
+        cls.temp_dir = tempfile.TemporaryDirectory(prefix="mdi-sdr-test-")
+        cls.out_dir = Path(cls.temp_dir.name)
 
         # Spawn headless daemon in mock mode
         cls.proc = subprocess.Popen(
             [
-                cls.python_exe,
+                sys.executable,
                 str(cls.script),
                 "--ipc-port", str(cls.test_port),
                 "--output-dir", str(cls.out_dir),
+                "--metrics-dir", str(cls.out_dir / "metrics"),
                 "--mock",
             ],
             stdout=subprocess.PIPE,
@@ -50,9 +47,12 @@ class TestSdrHeadlessIpc(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        if cls.proc.poll() is None:
-            cls.proc.terminate()
-            cls.proc.wait(timeout=2.0)
+        try:
+            if cls.proc.poll() is None:
+                cls.proc.terminate()
+                cls.proc.wait(timeout=2.0)
+        finally:
+            cls.temp_dir.cleanup()
 
     def _send_cmd(self, sock: socket.socket, action_dict: dict) -> list[dict]:
         payload = (json.dumps(action_dict) + "\n").encode("utf-8")
@@ -104,4 +104,3 @@ class TestSdrHeadlessIpc(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

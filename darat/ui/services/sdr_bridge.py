@@ -8,12 +8,11 @@ Communicates with sdr-mdi/ground_unit_headless.py via local TCP IPC on 127.0.0.1
 import json
 import os
 import socket
-import sys
+import subprocess
 import threading
 import time
 from pathlib import Path
 
-import subprocess
 from PySide6.QtCore import QObject, Signal, QThread
 
 from ...core.config_manager import get_global_config_manager
@@ -56,6 +55,7 @@ class SdrBridge(QObject):
         self._rx_running = False
         self._connect_thread: _SdrConnectWorker | None = None
         self._daemon_process: subprocess.Popen | None = None
+        self._stop_pending = False
 
         cfg = get_global_config_manager().get_config()
         self._ipc_host = cfg.get("sdr_ipc_host", "127.0.0.1")
@@ -138,8 +138,10 @@ class SdrBridge(QObject):
         self._send_ipc_message({"action": "CONNECT"})
         self.message_received.emit("[SDR] Initializing USRP B210 hardware & radio endpoint (loading FPGA/firmware, please wait)...")
 
-        # Wait up to 35 seconds for USRP FPGA and RF frontend initialization
-        for i in range(350):
+        # Wait for USRP FPGA and RF frontend initialization
+        connect_timeout = float(cfg.get("sdr_connect_timeout", 35.0))
+        iterations = max(1, int(connect_timeout / 0.1))
+        for i in range(iterations):
             time.sleep(0.1)
             if self._connected:
                 break
@@ -211,6 +213,15 @@ class SdrBridge(QObject):
                 self._socket = None
 
         self._connected = False
+        self._stop_pending = False
+        if self._daemon_process is not None:
+            if self._daemon_process.poll() is None:
+                self._daemon_process.terminate()
+                try:
+                    self._daemon_process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    self._daemon_process.kill()
+            self._daemon_process = None
         self.connection_changed.emit(False, "")
         self.message_received.emit("[SDR] Disconnected from SDR Radio Link.")
 
@@ -223,27 +234,29 @@ class SdrBridge(QObject):
 
         if cmd == "START_REC":
             self.message_received.emit("[SDR] Transmitting START command to Air Unit...")
-            self._send_ipc_message({"action": "START"})
+            if not self._send_ipc_message({"action": "START"}):
+                return False
             self.command_sent.emit("START_REC")
             return True
 
         elif cmd == "STOP_REC":
             self.message_received.emit("[SDR] Transmitting STOP command to Air Unit...")
-            self._send_ipc_message({"action": "STOP"})
+            if not self._send_ipc_message({"action": "STOP"}):
+                return False
+            self._stop_pending = True
             self.command_sent.emit("STOP_REC")
             return True
 
         elif cmd == "STATUS":
             self.message_received.emit("[SDR] Requesting system status...")
-            self._send_ipc_message({"action": "STATUS"})
+            if not self._send_ipc_message({"action": "STATUS"}):
+                return False
             self.command_sent.emit("STATUS")
             return True
 
         elif cmd == "RESTART":
-            self.message_received.emit("[SDR] Restart not supported directly via RF, stopping active session...")
-            self._send_ipc_message({"action": "STOP"})
-            self.command_sent.emit("RESTART")
-            return True
+            self.message_received.emit("[SDR] RESTART is not supported over RF")
+            return False
 
         else:
             self.message_received.emit(f"[SDR WARN] Unknown command: {command}")
@@ -302,7 +315,7 @@ class SdrBridge(QObject):
                     )
 
         # Find ground_unit_headless.py
-        root_dir = Path(__file__).resolve().parent.parent.parent.parent
+        root_dir = Path(__file__).resolve().parents[3]
         script_path = root_dir / "sdr-mdi" / "ground_unit_headless.py"
         output_dir = root_dir / "drone_recordings"
 
@@ -315,7 +328,7 @@ class SdrBridge(QObject):
             "--ipc-host", str(self._ipc_host),
             "--ipc-port", str(self._ipc_port),
             "--output-dir", str(output_dir),
-            "--metrics-dir", str(output_dir),
+            "--metrics-dir", str(root_dir / "drone_recordings" / "sdr_metrics"),
         ]
 
         if cfg.get("sdr_mock_mode", False):
@@ -335,6 +348,7 @@ class SdrBridge(QObject):
         try:
             self._daemon_process = subprocess.Popen(
                 cmd,
+                cwd=str(script_path.parent),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 env=env,
@@ -413,17 +427,13 @@ class SdrBridge(QObject):
             self.message_received.emit(f"[SDR RX] Data received: {os.path.basename(path)} ({summary})")
             if path and os.path.exists(path):
                 self.json_saved.emit(path)
-                try:
-                    with open(path, "rb") as f:
-                        raw = f.read()
-                        # Also emit as start/end marker bytes for backward compatibility
-                        self.data_received.emit(b"[START]\n" + raw + b"\n[END]\n")
-                except Exception:
-                    pass
 
         elif ev_type == "STATE_CHANGED":
             state = event_data.get("state", "UNKNOWN")
             self.message_received.emit(f"[SDR STATUS] Drone state changed to: {state}")
+            if state == "IDLE" and self._stop_pending:
+                self._stop_pending = False
+                self.message_received.emit("OK:Recording stopped and processed")
 
         elif ev_type == "LOG":
             msg = event_data.get("message", "")
@@ -434,4 +444,3 @@ class SdrBridge(QObject):
             obs = event_data.get("observed_state", "")
             sess = event_data.get("session_id", "")
             self.message_received.emit(f"[SDR STATUS] Desired: {des} | Observed: {obs} | Session: {sess}")
-
