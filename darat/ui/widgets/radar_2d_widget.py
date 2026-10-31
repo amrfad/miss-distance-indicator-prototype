@@ -143,14 +143,12 @@ class _RadarCanvas2D(QWidget):
                 y = float(ev.get("y", 0.0))
                 num = ev.get("event_number", "?")
                 r_miss = math.hypot(x, y)
-                clock, deg = _calc_clock_bearing(x, y)
 
                 tip = (
                     f"EVENT #{num}\n"
                     f"X = {x:+.2f} m\n"
                     f"Y = {y:+.2f} m\n"
-                    f"Miss Distance = {r_miss:.2f} m\n"
-                    f"Bearing = {clock} o'clock ({deg:.1f}°)"
+                    f"Miss Distance = {r_miss:.2f} m"
                 )
                 QToolTip.showText(event.globalPosition().toPoint(), tip, self)
                 return
@@ -235,6 +233,7 @@ class _RadarCanvas2D(QWidget):
 
             # Label jarak di sepanjang sumbu Utara (+Y)
             dist_m = i * ring_step
+
             p.setPen(_C_TEXT_DIM)
             p.drawText(int(center.x() + 5), int(center.y() - r_px + 12), f"{dist_m:.1f}m")
 
@@ -291,11 +290,11 @@ class _RadarCanvas2D(QWidget):
             ftype = self._face_types[face_idx]
 
             if ftype == "canopy":
-                fill_c = QColor(10, 180, 230, 140)
-                edge_c = QColor(60, 230, 255, 180)
+                fill_c = QColor(20, 95, 30, 150)
+                edge_c = QColor(60, 200, 75, 180)
             elif ftype == "exhaust":
-                fill_c = QColor(220, 130, 25, 140)
-                edge_c = QColor(255, 170, 40, 180)
+                fill_c = QColor(16, 70, 22, 140)
+                edge_c = QColor(45, 160, 55, 140)
             elif ftype == "wings":
                 fill_c = QColor(15, 75, 20, 120)
                 edge_c = QColor(40, 150, 50, 120)
@@ -336,12 +335,6 @@ class _RadarCanvas2D(QWidget):
     def _draw_events(self, p: QPainter, center: QPointF, radius: float):
         self._projected_events.clear()
         if not self._events:
-            p.setFont(QFont("IBM Plex Mono", 10))
-            p.setPen(_C_TEXT_DIM)
-            msg = "STANDBY — NO DETECTIONS"
-            fm = QFontMetricsF(p.font())
-            p.drawText(int(center.x() - fm.horizontalAdvance(msg) / 2),
-                       int(center.y() + radius * 0.15), msg)
             return
 
         p.setFont(QFont("IBM Plex Mono", 8, QFont.Weight.Bold))

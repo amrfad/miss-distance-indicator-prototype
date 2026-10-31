@@ -111,23 +111,21 @@ class TestVisualize2D(unittest.TestCase):
         # Verifikasi metric chips terisi
         self.assertNotEqual(page._chip_total.text(), "TOTAL: --")
         self.assertNotEqual(page._chip_valid.text(), "VALID: --")
-        self.assertIn("PCA:", page._chip_pca.text())
 
-        # Verifikasi tabel 2D: tepat 6 kolom (Event, X, Y, Miss Dist, Bearing, Status)
-        self.assertEqual(page._table.columnCount(), 6)
+        # Verifikasi tabel 2D: tepat 5 kolom (Event, X, Y, Miss Dist, Status)
+        self.assertEqual(page._table.columnCount(), 5)
         self.assertGreater(page._table.rowCount(), 0)
 
-        headers = [page._table.horizontalHeaderItem(i).text() for i in range(6)]
+        headers = [page._table.horizontalHeaderItem(i).text() for i in range(5)]
         self.assertEqual(
             headers,
-            ["Event", "X (m)", "Y (m)", "Miss Dist (m)", "Bearing", "Status"]
+            ["Event", "X (m)", "Y (m)", "Miss Dist (m)", "Status"]
         )
 
-        # Verifikasi status seragam (tanpa tag [PCA])
+        # Verifikasi status seragam
         for r in range(page._table.rowCount()):
-            status_text = page._table.item(r, 5).text()
+            status_text = page._table.item(r, 4).text()
             self.assertIn(status_text, ["VALID", "FAILED"])
-            self.assertNotIn("[PCA]", status_text)
 
         # Verifikasi interaksi klik tabel menyorot radar
         page._table.selectRow(0)

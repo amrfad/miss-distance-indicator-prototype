@@ -469,8 +469,8 @@ def visualize_2d_xy(events, filename, mic_positions=None):
     ax.set_aspect("equal")
     ax.axis("off")
 
-    pca_r2d = math.hypot(pca_ev["x"], pca_ev["y"])
-    title = f"2D TACTICAL RADAR (XY PLANE) — {filename}\nPCA: Event #{pca_num} (Miss Distance: {pca_r2d:.2f} m)"
+
+    title = f"2D TACTICAL RADAR (XY PLANE) — {filename}"
     ax.set_title(title, color="#33cc33", fontsize=12, fontweight="bold", pad=16, fontfamily="monospace")
 
     plt.tight_layout()
