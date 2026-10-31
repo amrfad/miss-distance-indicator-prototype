@@ -143,12 +143,14 @@ class _RadarCanvas2D(QWidget):
                 y = float(ev.get("y", 0.0))
                 num = ev.get("event_number", "?")
                 r_miss = math.hypot(x, y)
+                clock, deg = _calc_clock_bearing(x, y)
 
                 tip = (
                     f"EVENT #{num}\n"
                     f"X = {x:+.2f} m\n"
                     f"Y = {y:+.2f} m\n"
-                    f"Miss Distance = {r_miss:.2f} m"
+                    f"Miss Distance = {r_miss:.2f} m\n"
+                    f"Bearing = {clock} o'clock ({deg:.1f}°)"
                 )
                 QToolTip.showText(event.globalPosition().toPoint(), tip, self)
                 return

@@ -112,19 +112,19 @@ class TestVisualize2D(unittest.TestCase):
         self.assertNotEqual(page._chip_total.text(), "TOTAL: --")
         self.assertNotEqual(page._chip_valid.text(), "VALID: --")
 
-        # Verifikasi tabel 2D: tepat 5 kolom (Event, X, Y, Miss Dist, Status)
-        self.assertEqual(page._table.columnCount(), 5)
+        # Verifikasi tabel 2D: tepat 6 kolom (Event, X, Y, Miss Dist, Bearing, Status)
+        self.assertEqual(page._table.columnCount(), 6)
         self.assertGreater(page._table.rowCount(), 0)
 
-        headers = [page._table.horizontalHeaderItem(i).text() for i in range(5)]
+        headers = [page._table.horizontalHeaderItem(i).text() for i in range(6)]
         self.assertEqual(
             headers,
-            ["Event", "X (m)", "Y (m)", "Miss Dist (m)", "Status"]
+            ["Event", "X (m)", "Y (m)", "Miss Dist (m)", "Bearing", "Status"]
         )
 
         # Verifikasi status seragam
         for r in range(page._table.rowCount()):
-            status_text = page._table.item(r, 4).text()
+            status_text = page._table.item(r, 5).text()
             self.assertIn(status_text, ["VALID", "FAILED"])
 
         # Verifikasi interaksi klik tabel menyorot radar

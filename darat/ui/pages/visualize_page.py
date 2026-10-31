@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QFont, QColor
 
-from ..widgets.radar_2d_widget import Radar2DWidget
+from ..widgets.radar_2d_widget import Radar2DWidget, _calc_clock_bearing
 from ...visualize_results import parse_results_file
 
 
@@ -140,7 +140,7 @@ class VisualizePage(QWidget):
         )
         tl.addWidget(panel_title)
 
-        # Telemetry Stat Cards
+        # Telemetry Stat Cards (TOTAL, VALID, FAILED)
         chip_style = (
             "background-color: #0d200d; border: 1px solid #1a4a1a; border-radius: 4px; "
             "padding: 5px 8px; font-family: 'IBM Plex Mono'; font-size: 10px; font-weight: bold;"
@@ -161,11 +161,11 @@ class VisualizePage(QWidget):
         stat_row1.addWidget(self._chip_failed)
         tl.addLayout(stat_row1)
 
-        # Tabel Event Telemetry (Hanya metrik 2D)
+        # Tabel Event Telemetry (6 kolom 2D: Event, X, Y, Miss Dist, Bearing, Status)
         self._table = QTableWidget()
-        self._table.setColumnCount(5)
+        self._table.setColumnCount(6)
         self._table.setHorizontalHeaderLabels([
-            "Event", "X (m)", "Y (m)", "Miss Dist (m)", "Status"
+            "Event", "X (m)", "Y (m)", "Miss Dist (m)", "Bearing", "Status"
         ])
         self._table.verticalHeader().setVisible(False)
         self._table.setAlternatingRowColors(True)
@@ -186,7 +186,8 @@ class VisualizePage(QWidget):
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
 
         tl.addWidget(self._table, stretch=1)
 
@@ -279,7 +280,7 @@ class VisualizePage(QWidget):
         self._chip_valid.setText(f"VALID: {len(valid)}")
         self._chip_failed.setText(f"FAILED: {failed_count}")
 
-        # 3. Isi Tabel Event (5 kolom 2D murni)
+        # 3. Isi Tabel Event (6 kolom 2D murni)
         self._table.blockSignals(True)
         self._table.setRowCount(len(events))
 
@@ -293,16 +294,18 @@ class VisualizePage(QWidget):
                 x = float(ev.get("x", 0.0))
                 y = float(ev.get("y", 0.0))
                 r_miss = math.hypot(x, y)
+                clock, deg = _calc_clock_bearing(x, y)
 
                 col_texts = [
                     f"E{num}",
                     f"{x:+.3f}",
                     f"{y:+.3f}",
                     f"{r_miss:.3f}",
+                    f"{clock} ({deg:.0f}°)",
                     "VALID",
                 ]
             else:
-                col_texts = [f"E{num}", "—", "—", "—", "FAILED"]
+                col_texts = [f"E{num}", "—", "—", "—", "—", "FAILED"]
 
             for col, text in enumerate(col_texts):
                 item = QTableWidgetItem(text)
