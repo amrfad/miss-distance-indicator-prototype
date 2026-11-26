@@ -15,16 +15,17 @@ class _ApiWorker(QObject):
     finished = Signal(dict)
     error    = Signal(str)
 
-    def __init__(self, method: str, url: str, body: Optional[dict] = None):
+    def __init__(self, method: str, url: str, body: Optional[dict] = None, timeout: float = 2.0):
         super().__init__()
-        self._method = method
-        self._url    = url
-        self._body   = body
+        self._method  = method
+        self._url     = url
+        self._body    = body
+        self._timeout = float(timeout)
 
     def run(self):
         try:
             import requests  # type: ignore[import]
-            timeout = 2.0  # Fail faster so UI is more responsive
+            timeout = self._timeout
             if self._method == "GET":
                 resp = requests.get(self._url, timeout=timeout)
             elif self._method == "PATCH":
@@ -36,7 +37,18 @@ class _ApiWorker(QObject):
             else:
                 self.error.emit(f"Unknown HTTP method: {self._method}")
                 return
-            resp.raise_for_status()
+            if not resp.ok:
+                detail = f"HTTP {resp.status_code}"
+                try:
+                    payload = resp.json()
+                    err_obj = payload.get("error") if isinstance(payload, dict) else None
+                    if isinstance(err_obj, dict) and err_obj.get("message"):
+                        code = err_obj.get("code", "")
+                        detail = f"{code}: {err_obj['message']}" if code else err_obj["message"]
+                except Exception:
+                    pass
+                self.error.emit(detail)
+                return
             self.finished.emit(resp.json())
         except ImportError:
             self.error.emit(
@@ -65,6 +77,10 @@ class RestClient(QObject):
     drone_restarted        = Signal(dict)
     drone_schema_received  = Signal(dict)
     filter_schemas_received = Signal(dict)  # GET /filter-schemas
+    diagnostics_received    = Signal(dict)  # POST /diagnostics/run
+    diagnostics_error       = Signal(str)
+    mic_sample_received     = Signal(dict)  # POST /diagnostics/mic-sample
+    mic_sample_error        = Signal(str)
 
     # Ground station API
     ground_config_received = Signal(dict)
@@ -113,9 +129,10 @@ class RestClient(QObject):
         body:   Optional[dict],
         on_ok,
         on_err=None,
+        timeout: float = 2.0,
     ):
         thread = QThread(self)
-        worker = _ApiWorker(method, url, body)
+        worker = _ApiWorker(method, url, body, timeout=timeout)
         worker.moveToThread(thread)
 
         # Keep references to prevent premature garbage collection
@@ -174,6 +191,25 @@ class RestClient(QObject):
         self._fire(
             "GET", f"{self.drone_base}/filter-schemas", None,
             lambda d: self.filter_schemas_received.emit(d.get("data", {})),
+        )
+
+    def run_diagnostics(self, options: Optional[dict] = None, timeout: float = 25.0):
+        """Jalankan rangkaian System Check / Pre-Flight Diagnostics di drone."""
+        self._fire(
+            "POST", f"{self.drone_base}/diagnostics/run", options or {},
+            lambda d: self.diagnostics_received.emit(d.get("data", {})),
+            on_err=lambda msg: self.diagnostics_error.emit(msg),
+            timeout=timeout,
+        )
+
+    def fetch_mic_sample(self, duration_sec: float = 0.4, timeout: float = 6.0):
+        """Ambil 1 slice level mikrofon cepat untuk Live Mic Tap Monitor."""
+        self._fire(
+            "POST", f"{self.drone_base}/diagnostics/mic-sample",
+            {"duration_sec": float(duration_sec)},
+            lambda d: self.mic_sample_received.emit(d.get("data", {})),
+            on_err=lambda msg: self.mic_sample_error.emit(msg),
+            timeout=timeout,
         )
 
     # ── Ground station endpoints ─────────────────────────────────────────

@@ -21,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .core.config_manager import ConfigManager, ConfigError, ValidationError
+from .core.diagnostics import run_auto_checks, capture_live_mic_sample
 from .tdoa import filter_registry
 
 
@@ -259,6 +260,65 @@ def create_app(config_manager: ConfigManager, audio_system=None) -> FastAPI:
         threading.Thread(target=_delayed_exit, daemon=True).start()
         return _ok({"message": "Drone system restarting in 1 second..."})
 
+    # ── Diagnostics / System Check Endpoints ──────────────────────────
+
+    def _is_recording_active() -> bool:
+        if audio_system is None:
+            return False
+        try:
+            return bool(
+                hasattr(audio_system, "recorder")
+                and audio_system.recorder.is_recording()
+            )
+        except Exception:
+            return False
+
+    @app.post("/diagnostics/run", summary="Jalankan System Check / Pre-Flight Diagnostics")
+    def run_diagnostics_endpoint(body: Optional[dict] = None):
+        """
+        Menjalankan rangkaian auto-check hardware & software sisi udara.
+        Menggunakan sync handler agar FastAPI mengeksekusi di threadpool tanpa memblokir event loop.
+        Ditolak dengan 409 DRONE_BUSY jika drone sedang recording.
+        """
+        if _is_recording_active():
+            return _err(
+                "DRONE_BUSY",
+                "Drone sedang recording; hentikan rekaman sebelum menjalankan System Check.",
+                status=409,
+            )
+
+        opts = body if isinstance(body, dict) else {}
+        report = run_auto_checks(
+            audio_system=audio_system,
+            config_manager=config_manager,
+            options=opts,
+        )
+        return _ok(report)
+
+    @app.post("/diagnostics/mic-sample", summary="Ambil 1 slice level mikrofon untuk Live Mic Tap Monitor")
+    def mic_sample_endpoint(body: Optional[dict] = None):
+        """
+        Rekam slice pendek (~0.4s) dari perangkat audio dan kembalikan metrik RMS/Peak tiap mic.
+        Ditolak dengan 409 DRONE_BUSY jika drone sedang recording.
+        """
+        if _is_recording_active():
+            return _err(
+                "DRONE_BUSY",
+                "Drone sedang recording; tidak dapat memantau mikrofon via diagnostik.",
+                status=409,
+            )
+
+        opts = body if isinstance(body, dict) else {}
+        dur = float(opts.get("duration_sec", 0.4))
+        try:
+            sample = capture_live_mic_sample(
+                audio_system=audio_system,
+                config_manager=config_manager,
+                duration_sec=dur,
+            )
+            return _ok(sample)
+        except Exception as exc:
+            return _err("MIC_SAMPLE_ERROR", str(exc), status=500)
 
     return app
 
