@@ -1,4 +1,4 @@
 [submodule "sdr-mdi"]
 	path = sdr-mdi
 	url = https://github.com/AllThaf/sdr-mdi
-	branch = sdr-full-duplex
+	branch = sdr-full-duplex-dif-modulation

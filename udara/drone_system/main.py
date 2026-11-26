@@ -4,7 +4,16 @@ Drone Audio Detection System - Main Application
 Entry point untuk sistem drone audio detection dengan serial communication
 """
 
+import os
 import sys
+
+# Mendukung eksekusi langsung via `python main.py` di dalam folder drone_system
+if __name__ == "__main__" and not __package__:
+    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if parent_dir not in sys.path:
+        sys.path.insert(0, parent_dir)
+    __package__ = "drone_system"
+
 import time
 from .core.controller import DroneAudioSystem
 from .io.serial_handler import SerialHandler
