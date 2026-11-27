@@ -91,6 +91,36 @@ class TestLaptopConfigPanelSerialPort(unittest.TestCase):
         finally:
             serial.tools.list_ports.comports = original_comports
 
+    def test_conditional_visibility_sdr_vs_serial(self):
+        # Default is SERIAL
+        self.assertTrue(self.panel._sdr_container.isHidden())
+        self.assertFalse(self.panel._serial_container.isHidden())
+
+        # Switch to SDR via dropdown
+        self.panel.comm_backend.setCurrentText("SDR")
+        self.assertFalse(self.panel._sdr_container.isHidden())
+        self.assertTrue(self.panel._serial_container.isHidden())
+
+        # Switch back to SERIAL via set_config
+        self.panel.set_config({"comm_backend": "SERIAL"})
+        self.assertTrue(self.panel._sdr_container.isHidden())
+        self.assertFalse(self.panel._serial_container.isHidden())
+
+    def test_new_schema_fields_roundtrip(self):
+        cfg = {
+            "comm_backend": "SDR",
+            "sdr_ipc_host": "127.0.0.2",
+            "sdr_connect_timeout": 45.0,
+            "multilat_aggregate": "mean",
+            "multilat_max_norm": 350.0,
+        }
+        self.panel.set_config(cfg)
+        ui_vals = self.panel._get_values_from_ui()
+        self.assertEqual(ui_vals["sdr_ipc_host"], "127.0.0.2")
+        self.assertEqual(ui_vals["sdr_connect_timeout"], 45.0)
+        self.assertEqual(ui_vals["multilat_aggregate"], "mean")
+        self.assertEqual(ui_vals["multilat_max_norm"], 350.0)
+
 
 if __name__ == "__main__":
     unittest.main()
