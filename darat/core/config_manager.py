@@ -120,7 +120,7 @@ _PARAM_SCHEMA = [
         "type": "string",
         "default": "SERIAL",
         "enum": ["SERIAL", "SDR"],
-        "requires_restart": False,
+        "requires_restart": True,
         "unit": None,
     },
     {

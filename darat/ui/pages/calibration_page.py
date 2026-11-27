@@ -592,6 +592,8 @@ class CalibrationPage(QWidget):
 
     @Slot(str)
     def _on_json_saved_gui(self, file_path: str):
+        if not (self._is_recording or self._is_stopping):
+            return
         if file_path and os.path.exists(file_path):
             self._session_chunk_files.append(file_path)
             self._log(f"JSON diterima: {os.path.basename(file_path)}", "INFO")

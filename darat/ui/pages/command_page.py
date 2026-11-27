@@ -381,6 +381,14 @@ class CommandPage(QWidget):
     def _on_json_saved_gui(self, filename: str):
         """Called on GUI thread when JSON file is saved successfully."""
         parent = self.window()
+        cal_page = getattr(parent, "_page_calibration", None)
+        if cal_page and (
+            getattr(cal_page, "_is_recording", False)
+            or getattr(cal_page, "_is_stopping", False)
+        ):
+            # Saat CalibrationPage sedang merekam di mode SDR, jangan gandakan ke CommandPage
+            return
+
         self._last_json_file = filename
 
         if filename not in self._received_json_files:
