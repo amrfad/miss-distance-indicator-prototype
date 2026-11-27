@@ -417,12 +417,15 @@ class DroneAudioSystem:
 
             print(f"[CHUNK] {len(events)} event(s), TDOA saved to {tdoa_json_path}")
 
-            # 7. Kirim ke ground (hanya ONLINE mode)
-            if cfg.get("operation_mode", "OFFLINE") == "ONLINE":
+            # 7. Kirim ke ground
+            op_mode = cfg.get("operation_mode", "OFFLINE")
+            if op_mode == "ONLINE":
                 if self.comms and self.comms.send_file(tdoa_json_path):
                     print(f"[CHUNK] TDOA sent successfully.")
                 else:
                     print(f"[CHUNK] Failed to send TDOA (comms unavailable or send error).")
+            elif op_mode == "SDR":
+                print(f"[CHUNK] SDR mode — TDOA saved to {tdoa_json_path} for SDR broadcast")
             else:
                 print(f"[CHUNK] OFFLINE mode — skip serial transmission")
 

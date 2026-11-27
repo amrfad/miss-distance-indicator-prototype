@@ -235,10 +235,16 @@ class CommandPage(QWidget):
     def _check_device_connected(self) -> bool:
         """Check if serial port is connected. If not, display warning modal."""
         if not self._serial.is_connected():
+            is_sdr = "Sdr" in self._serial.__class__.__name__
+            msg = (
+                "SDR Radio Link is not connected.\n\nPlease ensure USRP B210 is connected and click CONNECT."
+                if is_sdr
+                else "Serial device is not connected.\n\nPlease connect the USB/Serial cable and click CONNECT."
+            )
             QMessageBox.warning(
                 self,
                 "Device Disconnected",
-                "Serial device is not connected.\n\nPlease connect the USB/Serial cable and click CONNECT.",
+                msg,
                 QMessageBox.StandardButton.Ok
             )
             return False
@@ -281,13 +287,20 @@ class CommandPage(QWidget):
         self._is_connecting = False
         self.connect_btn.setText("CONNECT")
         if success:
-            self._log(f"Connected to serial port ({port})", "INFO")
+            self._log(f"Connected to port ({port})", "INFO")
         else:
-            self._log("Connection failed: No serial device found", "ERROR")
+            is_sdr = "Sdr" in self._serial.__class__.__name__
+            err_title = "SDR Connection Failed" if is_sdr else "Connection Failed"
+            err_msg = (
+                "Failed to connect to SDR Radio Link.\n\nPlease check the log console for SDR daemon errors."
+                if is_sdr
+                else "No serial device detected.\n\nPlease check the cable connection and driver."
+            )
+            self._log(f"Connection failed: {err_title}", "ERROR")
             QMessageBox.warning(
                 self,
-                "Connection Failed",
-                "No serial device detected.\n\nPlease check the cable connection and driver.",
+                err_title,
+                err_msg,
                 QMessageBox.StandardButton.Ok
             )
         self._update_ui_state()
@@ -350,14 +363,19 @@ class CommandPage(QWidget):
         self.json_list_widget.clear()
         self.last_json_header.setText("LAST JSON RECEIVED (0):")
 
-        self._rx_thread = threading.Thread(
-            target=self._jr.receive_json,
-            kwargs={"on_saved": self.json_saved.emit, "continuous": True},
-            daemon=True,
-            name="JsonReceiver-Continuous",
-        )
-        self._rx_thread.start()
-        self._log("Continuous JSON receiver started", "DEBUG")
+        if hasattr(self._serial, "json_saved"):
+            # The SDR daemon reconstructs and saves JSON itself; no serial
+            # marker receiver (or serial manager) is involved.
+            self._log("SDR JSON receiver ready", "DEBUG")
+        else:
+            self._rx_thread = threading.Thread(
+                target=self._jr.receive_json,
+                kwargs={"on_saved": self.json_saved.emit, "continuous": True},
+                daemon=True,
+                name="JsonReceiver-Continuous",
+            )
+            self._rx_thread.start()
+            self._log("Continuous JSON receiver started", "DEBUG")
         self._update_ui_state()
 
     def _on_json_saved_gui(self, filename: str):

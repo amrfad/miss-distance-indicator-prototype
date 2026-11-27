@@ -4,7 +4,16 @@ Drone Audio Detection System - Main Application
 Entry point untuk sistem drone audio detection dengan serial communication
 """
 
+import os
 import sys
+
+# Mendukung eksekusi langsung via `python main.py` di dalam folder drone_system
+if __name__ == "__main__" and not __package__:
+    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if parent_dir not in sys.path:
+        sys.path.insert(0, parent_dir)
+    __package__ = "drone_system"
+
 import time
 from .core.controller import DroneAudioSystem
 from .io.serial_handler import SerialHandler
@@ -242,8 +251,11 @@ def main():
     # Host dan port dibaca dari config_manager (api_host, api_port)
     start_api_thread(config_manager, audio_system)
 
-    if config_manager.get("operation_mode") == "ONLINE":
+    op_mode = config_manager.get("operation_mode")
+    if op_mode == "ONLINE":
         return run_online_mode(audio_system, config_manager)
+    elif op_mode == "SDR":
+        return run_sdr_mode(audio_system, config_manager)
     else:
         return run_offline_mode(audio_system, config_manager)
 
@@ -303,6 +315,60 @@ def run_online_mode(audio_system, config_manager=None):
         print("[SYSTEM] Shutdown complete")
     
     return 0
+
+
+
+
+def run_sdr_mode(audio_system, config_manager=None):
+    """
+    Run dalam SDR mode:
+    - Tidak membuka serial port /dev/ttyUSB0
+    - Menjalankan Air Unit LoRa FDD daemon sebagai proses terpisah
+      (radioconda + PyQt5 + GNU Radio) dan menghubunginya lewat IPC TCP lokal
+    - Perintah START dari Ground (via RF) memicu audio_system.start_recording()
+    - Perintah STOP dari Ground (via RF) memicu audio_system.stop_and_process()
+    - Hasil chunk TDOA dipancarkan otomatis oleh daemon ke Ground
+
+    Catatan: proses ini sengaja TIDAK mengimpor modul sdr-mdi secara langsung.
+    Venv drone tidak memiliki PyQt5/GNU Radio/UHD, sehingga daemon harus
+    berjalan di dalam environment radioconda miliknya sendiri.
+    """
+    from .io.air_sdr_link import AirSdrLink
+
+    print("\n" + "=" * 60)
+    print("SDR MODE — USRP Full-Duplex LoRa Air Unit")
+    print("=" * 60)
+
+    def on_start():
+        print("[SDR COMMAND] Received START from Ground Station -> starting audio recording")
+        success, message = audio_system.start_recording()
+        if success:
+            link.set_source(audio_system.current_session_dir)
+        else:
+            print(f"[SDR] Failed to start recording: {message}")
+
+    def on_stop():
+        print("[SDR COMMAND] Received STOP from Ground Station -> stopping and processing audio")
+        audio_system.stop_and_process()
+
+    link = AirSdrLink(on_start=on_start, on_stop=on_stop)
+    if not link.connect():
+        print("[FATAL] Tidak dapat terhubung ke SDR Air daemon.")
+        print("Periksa konfigurasi sdr_python_path (radioconda) dan pastikan")
+        print("USRP B210 terpasang bila tidak memakai sdr_mock_mode.")
+        return 1
+
+    try:
+        while True:
+            time.sleep(1)
+            link.request_status()
+    except KeyboardInterrupt:
+        print("\n[SDR] Shutting down Air Unit...")
+        if audio_system.recorder.is_recording():
+            audio_system.recorder.stop_recording()
+        link.shutdown()
+        print("[SYSTEM] Shutdown complete")
+        return 0
 
 
 def run_offline_mode(audio_system, config_manager=None):

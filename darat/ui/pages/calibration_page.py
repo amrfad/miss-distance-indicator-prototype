@@ -127,6 +127,8 @@ class CalibrationPage(QWidget):
         if self._serial:
             self._serial.connection_changed.connect(self._on_connection_changed)
             self._serial.message_received.connect(self._on_serial_message)
+            if hasattr(self._serial, "json_saved"):
+                self._serial.json_saved.connect(self._json_saved_signal.emit)
 
     def _build_ui(self):
         main_layout = QVBoxLayout(self)
@@ -474,7 +476,9 @@ class CalibrationPage(QWidget):
 
         # Siapkan receiver
         self._session_chunk_files.clear()
-        if self._jr:
+        if hasattr(self._serial, "json_saved"):
+            self._log("SDR JSON receiver ready for calibration", "DEBUG")
+        elif self._jr:
             self._jr.reset()
             self._rx_thread = threading.Thread(
                 target=self._jr.receive_json,
