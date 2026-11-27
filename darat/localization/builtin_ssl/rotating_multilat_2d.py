@@ -14,7 +14,7 @@ _DEFAULT_MIN_MICS = 4
 _DEFAULT_MAX_NORM = 150.0
 
 
-def _get_tdoa(tdoa_dict: dict, m_i: str, m_j: str, n_mics: int) -> Optional[float]:
+def _get_tdoa(tdoa_dict: dict, m_i: str, m_j: str, mic_names: List[str]) -> Optional[float]:
     """Ambil nilai TDOA tau_ij = t_i - t_j (detik) dengan transitivitas 1-hop."""
     k1 = f"{m_i}-{m_j}"
     if k1 in tdoa_dict:
@@ -23,16 +23,15 @@ def _get_tdoa(tdoa_dict: dict, m_i: str, m_j: str, n_mics: int) -> Optional[floa
     if k2 in tdoa_dict:
         return -float(tdoa_dict[k2])
 
-    for k in range(n_mics):
-        mid = f"mic{k}"
+    for mid in mic_names:
         if mid in (m_i, m_j):
             continue
-        v1 = tdoa_dict.get(f"{m_i}-{mid}") or (
-            -tdoa_dict[f"{mid}-{m_i}"] if f"{mid}-{m_i}" in tdoa_dict else None
-        )
-        v2 = tdoa_dict.get(f"{m_j}-{mid}") or (
-            -tdoa_dict[f"{mid}-{m_j}"] if f"{mid}-{m_j}" in tdoa_dict else None
-        )
+        v1 = tdoa_dict.get(f"{m_i}-{mid}")
+        if v1 is None and f"{mid}-{m_i}" in tdoa_dict:
+            v1 = -float(tdoa_dict[f"{mid}-{m_i}"])
+        v2 = tdoa_dict.get(f"{m_j}-{mid}")
+        if v2 is None and f"{mid}-{m_j}" in tdoa_dict:
+            v2 = -float(tdoa_dict[f"{mid}-{m_j}"])
         if v1 is not None and v2 is not None:
             return float(v1) - float(v2)
     return None
@@ -43,7 +42,7 @@ def multilaterate_subset_2d(
     tdoa_data: dict,
     subset_indices: List[int],
     c: float,
-    n_mics: int
+    mic_names: List[str],
 ) -> Optional[np.ndarray]:
     """
     Closed-form hyperbolic linear multilateration 2D dari subset >= 4 mikrofon.
@@ -55,11 +54,12 @@ def multilaterate_subset_2d(
     ref = subset_indices[0]
     others = subset_indices[1:]
     s0 = mic_pos[ref]
+    ref_name = mic_names[ref]
 
     A = []
     b = []
     for oi in others:
-        tau = _get_tdoa(tdoa_data, f"mic{ref}", f"mic{oi}", n_mics)
+        tau = _get_tdoa(tdoa_data, ref_name, mic_names[oi], mic_names)
         if tau is None:
             return None
 
@@ -114,12 +114,12 @@ def solve(event_data: dict, mic_positions: dict, config: dict) -> Tuple[Optional
             return [float(p["x"]), float(p["y"])]
         return [float(p[0]), float(p[1])]
 
-    stations_arr = np.array([_pos2d(f"mic{k}") for k in range(n_mics)], dtype=float)
+    stations_arr = np.array([_pos2d(m) for m in mic_names], dtype=float)
 
     # Bangun subset Leave-One-Out (LOO) dengan rotasi referensi
     subsets = []
     if n_mics >= 5:
-        # Jika M=6, kita gunakan 6 subset masing-masing 5 mikrofon
+        # Jika M=6 -> 6 subset @ 5 mic; jika M=5 -> 5 subset @ 4 mic
         for k in range(n_mics):
             rest = [m for m in range(n_mics) if m != k]
             ref = (k + 1) % n_mics
@@ -133,7 +133,7 @@ def solve(event_data: dict, mic_positions: dict, config: dict) -> Tuple[Optional
 
     pos_list = []
     for sub in subsets:
-        pos2d = multilaterate_subset_2d(stations_arr, tdoa_data, sub, c=c, n_mics=n_mics)
+        pos2d = multilaterate_subset_2d(stations_arr, tdoa_data, sub, c=c, mic_names=mic_names)
         if pos2d is not None and np.all(np.isfinite(pos2d)):
             if np.linalg.norm(pos2d) <= max_norm:
                 pos_list.append(pos2d)

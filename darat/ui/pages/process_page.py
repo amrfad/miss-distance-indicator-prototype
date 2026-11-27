@@ -58,6 +58,12 @@ class _ProcessWorker(QObject):
             self.progress.emit(f"\nEVENT {num}")
             self.progress.emit("─" * 40)
 
+            active_mics = event.get("active_mics")
+            excluded_mics = event.get("excluded_mics")
+            if active_mics is not None:
+                excl_str = f" | excluded: {excluded_mics}" if excluded_mics else ""
+                self.progress.emit(f"Active Mics: {len(active_mics)} ({', '.join(active_mics)}){excl_str}")
+
             pos, cluster_size, clusters_info = process_event_tdoa(
                 event, self._mic_positions, method=self._method_key
             )
@@ -74,8 +80,13 @@ class _ProcessWorker(QObject):
                 )
                 if cluster_size is not None:
                     self.progress.emit(f"Cluster   : {cluster_size} consistent solutions")
+                if clusters_info:
+                    for line in clusters_info:
+                        if "DEGRADED" in line:
+                            self.progress.emit(f"[WARN] {line}")
             else:
-                self.progress.emit("Position  : FAILED (no valid solution)")
+                reason = f" ({clusters_info[0]})" if clusters_info else ""
+                self.progress.emit(f"Position  : FAILED{reason}")
 
         self.progress.emit("\n" + "=" * 60)
         self.progress.emit("PROCESSING COMPLETE")

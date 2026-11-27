@@ -32,7 +32,7 @@ _DEFAULT_MAX_NORM = 200.0
 _DEFAULT_AGGREGATE = "median"
 
 
-def _get_tdoa(tdoa_dict: dict, m_i: str, m_j: str, n_mics: int) -> Optional[float]:
+def _get_tdoa(tdoa_dict: dict, m_i: str, m_j: str, mic_names) -> Optional[float]:
     """
     Ambil nilai TDOA tau_ij = t_i - t_j (detik) dengan transitivitas 1-hop.
     Mendukung format key 'micX-micY' maupun tuple (i, j).
@@ -57,16 +57,16 @@ def _get_tdoa(tdoa_dict: dict, m_i: str, m_j: str, n_mics: int) -> Optional[floa
         pass
 
     # 3. Transitivitas 1-hop
-    for k in range(n_mics):
-        mid = f"mic{k}"
+    candidates = [f"mic{k}" for k in range(mic_names)] if isinstance(mic_names, int) else list(mic_names)
+    for mid in candidates:
         if mid in (m_i, m_j):
             continue
-        v1 = tdoa_dict.get(f"{m_i}-{mid}") or (
-            -tdoa_dict[f"{mid}-{m_i}"] if f"{mid}-{m_i}" in tdoa_dict else None
-        )
-        v2 = tdoa_dict.get(f"{m_j}-{mid}") or (
-            -tdoa_dict[f"{mid}-{m_j}"] if f"{mid}-{m_j}" in tdoa_dict else None
-        )
+        v1 = tdoa_dict.get(f"{m_i}-{mid}")
+        if v1 is None and f"{mid}-{m_i}" in tdoa_dict:
+            v1 = -float(tdoa_dict[f"{mid}-{m_i}"])
+        v2 = tdoa_dict.get(f"{m_j}-{mid}")
+        if v2 is None and f"{mid}-{m_j}" in tdoa_dict:
+            v2 = -float(tdoa_dict[f"{mid}-{m_j}"])
         if v1 is not None and v2 is not None:
             return float(v1) - float(v2)
 
@@ -78,7 +78,7 @@ def multilaterate_subset(
     tdoa_data: dict,
     subset_indices: List[int],
     c: float,
-    n_mics: int
+    mic_names,
 ) -> Tuple[Optional[np.ndarray], Optional[float]]:
     """
     Closed-form hyperbolic linear multilateration dari subset >= 5 mikrofon.
@@ -93,11 +93,13 @@ def multilaterate_subset(
     ref = subset_indices[0]
     others = subset_indices[1:]
     r0 = mic_pos[ref]
+    names = [f"mic{k}" for k in range(mic_names)] if isinstance(mic_names, int) else list(mic_names)
+    ref_name = names[ref]
 
     A = []
     b = []
     for oi in others:
-        tau = _get_tdoa(tdoa_data, f"mic{ref}", f"mic{oi}", n_mics)
+        tau = _get_tdoa(tdoa_data, ref_name, names[oi], names)
         if tau is None:
             return None, None
 
@@ -148,7 +150,7 @@ def solve(event_data: dict, mic_positions: dict, config: dict) -> tuple:
     aggregate = str(config.get("multilat_aggregate", _DEFAULT_AGGREGATE)).lower()
     tdoa_data = event_data.get("tdoa", {})
 
-    mic_names = list(mic_positions.keys())
+    mic_names = sorted(list(mic_positions.keys()))
     n_mics = len(mic_names)
 
     if n_mics < min_mics:
@@ -162,7 +164,7 @@ def solve(event_data: dict, mic_positions: dict, config: dict) -> tuple:
             return [p["x"], p["y"], p["z"]]
         return list(p)
 
-    stations_arr = np.array([_pos(f"mic{k}") for k in range(n_mics)], dtype=float)
+    stations_arr = np.array([_pos(m) for m in mic_names], dtype=float)
 
     # Buat subset mikrofon dengan referensi berotasi
     if min_mics == n_mics - 1:
@@ -185,22 +187,23 @@ def solve(event_data: dict, mic_positions: dict, config: dict) -> tuple:
 
     for idx, sub in enumerate(subsets):
         ref = sub[0]
-        pos, t0 = multilaterate_subset(stations_arr, tdoa_data, sub, c=c, n_mics=n_mics)
+        ref_name = mic_names[ref]
+        pos, t0 = multilaterate_subset(stations_arr, tdoa_data, sub, c=c, mic_names=mic_names)
         if pos is not None and np.all(np.isfinite(pos)):
             norm_val = float(np.linalg.norm(pos))
             if norm_val <= max_norm:
                 pos_list.append(pos)
                 info = (
-                    f"Subset {idx+1} (Ref=mic{ref}, Mics={[f'mic{m}' for m in sub]}): "
+                    f"Subset {idx+1} (Ref={ref_name}, Mics={[mic_names[m] for m in sub]}): "
                     f"pos=[{pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}] m, norm={norm_val:.2f} m"
                 )
                 subsets_info.append(info)
             else:
                 subsets_info.append(
-                    f"Subset {idx+1} (Ref=mic{ref}): ditolak (norm={norm_val:.1f} m > {max_norm} m)"
+                    f"Subset {idx+1} (Ref={ref_name}): ditolak (norm={norm_val:.1f} m > {max_norm} m)"
                 )
         else:
-            subsets_info.append(f"Subset {idx+1} (Ref=mic{ref}): gagal kalkulasi / singular")
+            subsets_info.append(f"Subset {idx+1} (Ref={ref_name}): gagal kalkulasi / singular")
 
     if not pos_list:
         print("[WARN] [RotatingMultilat] Tidak ada subset yang menghasilkan solusi fisik valid.")

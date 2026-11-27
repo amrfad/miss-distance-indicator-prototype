@@ -113,6 +113,37 @@ def solve_tdoa_least_squares(mic_positions: dict, tdoa_data: dict) -> Optional[t
 # Fungsi utama pemrosesan
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _filter_active_mic_positions(event_data: dict, mic_positions: dict) -> dict:
+    """
+    Saring mic_positions agar hanya menyisakan mikrofon yang benar-benar aktif pada event ini.
+
+    Prioritas:
+      1. Jika event_data memiliki field 'active_mics' (list nama mic sehat dari drone),
+         ambil irisan dengan mic_positions.
+      2. Jika tidak ada 'active_mics', inferensi otomatis dari pasangan key pada event_data['tdoa']
+         (mis. 'mic0-mic3' -> {'mic0', 'mic3'}).
+      3. Jika 'tdoa' kosong, kembalikan dict kosong (atau subset sesuai 'active_mics').
+    """
+    active_list = event_data.get("active_mics")
+    if isinstance(active_list, list) and len(active_list) > 0:
+        return {m: mic_positions[m] for m in active_list if m in mic_positions}
+
+    tdoa_data = event_data.get("tdoa", {})
+    if isinstance(tdoa_data, dict) and tdoa_data:
+        inferred = set()
+        for key in tdoa_data.keys():
+            if isinstance(key, str) and "-" in key:
+                a, b = key.split("-", 1)
+                if a in mic_positions:
+                    inferred.add(a)
+                if b in mic_positions:
+                    inferred.add(b)
+        if inferred:
+            return {m: mic_positions[m] for m in sorted(inferred)}
+
+    return dict(mic_positions)
+
+
 def process_event_tdoa(
     event_data: dict,
     mic_positions: dict,
@@ -121,30 +152,41 @@ def process_event_tdoa(
     """
     Memproses satu event TDOA dan mengembalikan estimasi posisi.
 
-    Mendelegasikan kalkulasi ke metode yang terdaftar di ssl_registry.
-    Untuk mendapatkan daftar metode yang tersedia gunakan:
-        from . import ssl_registry
-        ssl_registry.get_available_methods()
-
-    Args:
-        event_data:    Data event dengan TDOA measurements (dict dengan kunci 'tdoa')
-        mic_positions: Dict posisi mikrofon
-        method:        Key metode SSL (sesuai ssl_registry). Default: 'bucher_misra'
-
-    Returns:
-        (estimated_position, cluster_size, clusters_info)
-        - estimated_position : list [x, y, z] atau None
-        - cluster_size       : int atau None (jika metode tidak menggunakan clustering)
-        - clusters_info      : list of str atau None
+    Mendukung graceful degradation saat 1–3 mikrofon rusak:
+      - Memfilter mic_positions secara otomatis sesuai mic aktif di event.
+      - Jika aktif == 3 mic: otomatis fallback ke 'nlls_2d' (degraded / low confidence).
+      - Jika aktif == 4 mic dan metode butuh >= 5 mic ('rotating_multilat'): fallback ke 'nlls_2d'.
+      - Jika aktif < 3 mic: return (None, 0, [pesan]).
     """
     cfg = get_global_config_manager().get_config()
 
-    entry = ssl_registry.get_method(method)
+    active_mic_positions = _filter_active_mic_positions(event_data, mic_positions)
+    n_active = len(active_mic_positions)
+    excluded_mics = event_data.get("excluded_mics") or {}
+
+    if n_active < 3:
+        msg = f"Insufficient active microphones ({n_active} < 3); excluded={excluded_mics}"
+        return None, 0, [msg]
+
+    effective_method = method
+    fallback_notes: List[str] = []
+
+    if n_active == 3 and method != "nlls_2d":
+        effective_method = "nlls_2d"
+        fallback_notes.append(
+            f"DEGRADED MODE (3 mics): metode '{method}' dialihkan otomatis ke 'nlls_2d' (low confidence)"
+        )
+    elif n_active == 4 and method == "rotating_multilat":
+        effective_method = "nlls_2d"
+        fallback_notes.append(
+            "DEGRADED MODE (4 mics): 'rotating_multilat' butuh >=5 mic, dialihkan otomatis ke 'nlls_2d'"
+        )
+
+    entry = ssl_registry.get_method(effective_method)
     if entry is None:
-        # Fallback: coba default
         fallback_key = ssl_registry.get_default_key()
         print(
-            f"[WARN] Metode '{method}' tidak ditemukan di registry. "
+            f"[WARN] Metode '{effective_method}' tidak ditemukan di registry. "
             f"Fallback ke '{fallback_key}'."
         )
         entry = ssl_registry.get_method(fallback_key)
@@ -154,22 +196,26 @@ def process_event_tdoa(
         return None, None, None
 
     try:
-        result = entry.solve(event_data, mic_positions, cfg)
+        result = entry.solve(event_data, active_mic_positions, cfg)
     except Exception as exc:
-        print(f"[ERROR] Metode '{method}' gagal: {exc}")
+        print(f"[ERROR] Metode '{effective_method}' gagal: {exc}")
         return None, None, None
 
     # Normalisasi hasil: pastikan selalu tuple 3 elemen
     if result is None:
-        return None, None, None
+        return None, None, fallback_notes or None
 
     if not isinstance(result, (tuple, list)) or len(result) < 3:
-        # Metode hanya mengembalikan posisi — bungkus ke format standar
-        return list(result) if result is not None else None, None, None
+        return list(result) if result is not None else None, None, fallback_notes or None
 
     pos, cluster_size, clusters_info = result[0], result[1], result[2]
     if pos is not None:
         pos = list(pos)
+
+    if fallback_notes:
+        merged_info = list(fallback_notes) + (list(clusters_info) if clusters_info else [])
+        clusters_info = merged_info
+
     return pos, cluster_size, clusters_info
 
 
