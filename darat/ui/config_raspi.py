@@ -15,6 +15,8 @@ _LABEL_W = 150
 
 _RESTART_REQUIRED = {
     "operation_mode", "serial_port", "baud_rate", "serial_timeout", "arecord_device",
+    "sdr_ipc_host", "sdr_air_ipc_port", "sdr_python_path", "sdr_mock_mode",
+    "sdr_connect_timeout", "sdr_air_input_file",
     "sample_rate", "active_profile", "num_mics_h8", "base_output_dir",
     "tdoa_method", "drone_rpm", "env_smooth_ms", "env_decimation", "do_closure_tuning",
     "arecord_terminate_timeout",
@@ -56,7 +58,13 @@ class RaspiConfigPanel(QWidget):
     restart_drone_requested = Signal()
 
     _DEFAULTS = {
-        "operation_mode": "OFFLINE",
+        "operation_mode": "SDR",
+        "sdr_ipc_host": "127.0.0.1",
+        "sdr_air_ipc_port": 5006,
+        "sdr_python_path": "",
+        "sdr_mock_mode": False,
+        "sdr_connect_timeout": 30.0,
+        "sdr_air_input_file": "",
         "serial_port": "/dev/ttyUSB0",
         "baud_rate": 230400,
         "serial_timeout": 5.0,
@@ -133,7 +141,9 @@ class RaspiConfigPanel(QWidget):
 
         # Stacked widget for category pages
         self._stacked_widget = QStackedWidget()
-        self._stacked_widget.addWidget(_make_page(self._group_operation(), self._group_output_files()))
+        self._stacked_widget.addWidget(
+            _make_page(self._group_operation(), self._group_sdr(), self._group_output_files())
+        )
         self._stacked_widget.addWidget(_make_page(self._group_audio(), self._group_streaming()))
         self._stacked_widget.addWidget(_make_page(self._group_tdoa(), self._group_detection()))
         self._stacked_widget.addWidget(_make_page(self._group_filter_method()))
@@ -181,7 +191,7 @@ class RaspiConfigPanel(QWidget):
         sec = CollapsibleSection("OPERATION MODE")
 
         self.operation_mode = QComboBox()
-        self.operation_mode.addItems(["OFFLINE", "ONLINE"])
+        self.operation_mode.addItems(["SDR", "ONLINE", "OFFLINE"])
         sec.add_row(_lbl("Operation Mode:", restart=True), self.operation_mode)
 
         self.active_profile = QComboBox()
@@ -191,6 +201,43 @@ class RaspiConfigPanel(QWidget):
         self.base_output_dir = QLineEdit()
         self.base_output_dir.setPlaceholderText("drone_recordings")
         sec.add_row(_lbl("Output Directory:", restart=True), self.base_output_dir)
+
+        return sec
+
+    def _group_sdr(self) -> CollapsibleSection:
+        sec = CollapsibleSection("SDR COMMUNICATION (USRP)")
+
+        self.sdr_ipc_host = QLineEdit()
+        self.sdr_ipc_host.setObjectName("monoField")
+        self.sdr_ipc_host.setPlaceholderText("127.0.0.1")
+        sec.add_row(_lbl("SDR IPC Host:", restart=True), self.sdr_ipc_host)
+
+        self.sdr_air_ipc_port = QSpinBox()
+        self.sdr_air_ipc_port.setObjectName("monoField")
+        self.sdr_air_ipc_port.setRange(1024, 65535)
+        self.sdr_air_ipc_port.setValue(5006)
+        sec.add_row(_lbl("SDR Air IPC Port:", restart=True), self.sdr_air_ipc_port)
+
+        self.sdr_python_path = QLineEdit()
+        self.sdr_python_path.setObjectName("monoField")
+        self.sdr_python_path.setPlaceholderText("/home/pi/radioconda/bin/python")
+        sec.add_row(_lbl("SDR Python Path:", restart=True), self.sdr_python_path)
+
+        self.sdr_connect_timeout = QDoubleSpinBox()
+        self.sdr_connect_timeout.setObjectName("monoField")
+        self.sdr_connect_timeout.setRange(5.0, 120.0)
+        self.sdr_connect_timeout.setSingleStep(5.0)
+        self.sdr_connect_timeout.setSuffix(" s")
+        self.sdr_connect_timeout.setValue(30.0)
+        sec.add_row(_lbl("SDR Connect Timeout:", restart=True), self.sdr_connect_timeout)
+
+        self.sdr_mock_mode = QCheckBox("Simulasi Air Daemon tanpa USRP B210")
+        sec.add_row(_lbl("SDR Mock Mode:", restart=True), self.sdr_mock_mode)
+
+        self.sdr_air_input_file = QLineEdit()
+        self.sdr_air_input_file.setObjectName("monoField")
+        self.sdr_air_input_file.setPlaceholderText("(kosong = pantau folder rekaman)")
+        sec.add_row(_lbl("SDR Input File:", restart=True), self.sdr_air_input_file)
 
         return sec
 
@@ -477,7 +524,13 @@ class RaspiConfigPanel(QWidget):
         self.current_config = merged
         c = self.current_config
 
-        self.operation_mode.setCurrentText(c.get("operation_mode", "OFFLINE"))
+        self.operation_mode.setCurrentText(c.get("operation_mode", "SDR"))
+        self.sdr_ipc_host.setText(str(c.get("sdr_ipc_host", "127.0.0.1")))
+        self.sdr_air_ipc_port.setValue(int(c.get("sdr_air_ipc_port", 5006)))
+        self.sdr_python_path.setText(str(c.get("sdr_python_path", "")))
+        self.sdr_connect_timeout.setValue(float(c.get("sdr_connect_timeout", 30.0)))
+        self.sdr_mock_mode.setChecked(bool(c.get("sdr_mock_mode", False)))
+        self.sdr_air_input_file.setText(str(c.get("sdr_air_input_file", "")))
         self.active_profile.setCurrentText(c.get("active_profile", "H8"))
         self.base_output_dir.setText(c.get("base_output_dir", "drone_recordings"))
         self.sample_rate.setCurrentText(str(c.get("sample_rate", 48000)))
@@ -531,6 +584,12 @@ class RaspiConfigPanel(QWidget):
         chosen_tdoa_method = self.tdoa_method.currentData()
         base = {
             "operation_mode": self.operation_mode.currentText(),
+            "sdr_ipc_host": self.sdr_ipc_host.text().strip(),
+            "sdr_air_ipc_port": self.sdr_air_ipc_port.value(),
+            "sdr_python_path": self.sdr_python_path.text().strip(),
+            "sdr_connect_timeout": self.sdr_connect_timeout.value(),
+            "sdr_mock_mode": self.sdr_mock_mode.isChecked(),
+            "sdr_air_input_file": self.sdr_air_input_file.text().strip(),
             "active_profile": self.active_profile.currentText(),
             "base_output_dir": self.base_output_dir.text(),
             "sample_rate": int(self.sample_rate.currentText()),

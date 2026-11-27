@@ -1,5 +1,7 @@
 {
-  "operation_mode": "OFFLINE",
+  "operation_mode": "SDR",
+  "sdr_python_path": "/home/genadratama/radioconda/bin/python",
+  "sdr_connect_timeout": 30.0,
   "serial_port": "/dev/ttyUSB0",
   "baud_rate": 230400,
   "serial_timeout": 5.0,

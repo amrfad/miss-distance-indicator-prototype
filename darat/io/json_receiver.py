@@ -231,7 +231,7 @@ class JsonReceiver:
         any_success = False
 
         try:
-            if not self.serial_manager.is_connected():
+            if self.serial_manager is not None and not self.serial_manager.is_connected():
                 self._log("[ERROR] Serial not connected")
                 return False
 
@@ -264,7 +264,7 @@ class JsonReceiver:
     def _receive_once(self, on_saved=None) -> bool:
         """Terima satu paket JSON lalu berhenti."""
         try:
-            if not self.serial_manager.is_connected():
+            if self.serial_manager is not None and not self.serial_manager.is_connected():
                 self._log("[ERROR] Serial not connected")
                 return False
 
