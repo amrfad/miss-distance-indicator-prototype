@@ -63,6 +63,23 @@ class CommandPage(QWidget):
             self._log_callback(msg, level)
         self.log_message.emit(msg, level)
 
+    def set_system_check_status(self, status: str, time_str: str = ""):
+        """Update badge status hasil System Check terakhir (advisory, tidak memblokir START REC)."""
+        st = (status or "UNCHECKED").upper()
+        ts_suffix = f" · {time_str}" if time_str else ""
+        style_map = {
+            "PASS":      ("SYSTEM CHECK: PASS", "#dcfce7", "#166534", "#86efac"),
+            "WARN":      ("SYSTEM CHECK: WARN", "#fef3c7", "#92400e", "#fcd34d"),
+            "FAIL":      ("SYSTEM CHECK: FAIL", "#fee2e2", "#991b1b", "#fca5a5"),
+            "UNCHECKED": ("SYSTEM CHECK: NOT CHECKED", "#f1f5f9", "#475569", "#cbd5e1"),
+        }
+        label, bg, fg, border = style_map.get(st, style_map["UNCHECKED"])
+        self.sys_check_indicator.setText(f"{label}{ts_suffix}")
+        self.sys_check_indicator.setStyleSheet(
+            f"background-color: {bg}; color: {fg}; border: 1px solid {border}; "
+            "border-radius: 5px; padding: 3px 10px; font-size: 11px; font-weight: 700;"
+        )
+
     def _build_ui(self):
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 16, 16, 16)
@@ -84,6 +101,14 @@ class CommandPage(QWidget):
         status_layout.addWidget(self.rec_indicator)
 
         status_layout.addStretch()
+
+        self.sys_check_indicator = QLabel("SYSTEM CHECK: NOT CHECKED")
+        self.sys_check_indicator.setObjectName("statusHeading")
+        self.sys_check_indicator.setStyleSheet(
+            "background-color: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; "
+            "border-radius: 5px; padding: 3px 10px; font-size: 11px; font-weight: 700;"
+        )
+        status_layout.addWidget(self.sys_check_indicator)
         root.addWidget(status_bar)
 
         # ── Middle Section: Buttons (Left) & Status Response (Right) ──
@@ -515,10 +540,11 @@ class CommandPage(QWidget):
             return
 
         self._log(f"Processing: {os.path.basename(self._last_json_file)}", "INFO")
-        if self._navigate:
-            self._navigate(2)
-
         parent = self.window()
+        if self._navigate:
+            process_idx = getattr(parent, "_PAGE_PROCESS", 3)
+            self._navigate(process_idx)
+
         if hasattr(parent, '_page_process'):
             process_page = parent._page_process
             process_page.set_working_dir(os.path.dirname(self._last_json_file))

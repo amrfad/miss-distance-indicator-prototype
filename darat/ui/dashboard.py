@@ -19,6 +19,7 @@ from ..core.config_manager import get_global_config_manager
 from .services.serial_bridge import SerialBridge
 from .services.rest_client import RestClient
 from .pages.config_page import ConfigPage
+from .pages.system_check_page import SystemCheckPage
 from .pages.command_page import CommandPage
 from .pages.process_page import ProcessPage
 from .pages.visualize_page import VisualizePage
@@ -32,10 +33,11 @@ class MainDashboard(QMainWindow):
     log_signal = Signal(str, str)  # (message, level)
 
     _PAGE_CONFIG = 0
-    _PAGE_COMMAND = 1
-    _PAGE_PROCESS = 2
-    _PAGE_VISUALIZE = 3
-    _PAGE_CALIBRATE = 4
+    _PAGE_SYSTEM_CHECK = 1
+    _PAGE_COMMAND = 2
+    _PAGE_PROCESS = 3
+    _PAGE_VISUALIZE = 4
+    _PAGE_CALIBRATE = 5
 
     def __init__(self):
         super().__init__()
@@ -195,6 +197,7 @@ class MainDashboard(QMainWindow):
 
         nav_items = [
             ("CONFIG", self._PAGE_CONFIG),
+            ("SYSTEM CHECK", self._PAGE_SYSTEM_CHECK),
             ("COMMAND", self._PAGE_COMMAND),
             ("PROCESS", self._PAGE_PROCESS),
             ("VISUALIZE", self._PAGE_VISUALIZE),
@@ -236,6 +239,11 @@ class MainDashboard(QMainWindow):
         )
 
         self._page_config = ConfigPage(rest_client=self._rest_client)
+        self._page_system_check = SystemCheckPage(
+            rest_client=self._rest_client,
+            serial_bridge=self._serial_bridge,
+            parent=self,
+        )
         self._page_command = CommandPage(
             serial_bridge=self._serial_bridge,
             file_transfer=self._file_transfer,
@@ -256,6 +264,7 @@ class MainDashboard(QMainWindow):
         )
 
         self._stack.addWidget(self._page_config)
+        self._stack.addWidget(self._page_system_check)
         self._stack.addWidget(self._page_command)
         self._stack.addWidget(self._page_process)
         self._stack.addWidget(self._page_visualize)
@@ -271,11 +280,15 @@ class MainDashboard(QMainWindow):
         # Wire signals
         self.log_signal.connect(self._log.log)
 
-        for page in (self._page_config, self._page_command,
-                     self._page_process, self._page_visualize,
-                     self._page_calibration):
+        for page in (self._page_config, self._page_system_check,
+                     self._page_command, self._page_process,
+                     self._page_visualize, self._page_calibration):
             if hasattr(page, "log_message"):
                 page.log_message.connect(self._log.log)
+
+        self._page_system_check.check_summary_updated.connect(
+            self._page_command.set_system_check_status
+        )
 
         self._page_config.restart_requested.connect(self._do_restart_drone)
         self._page_config.apply_serial_requested.connect(self._apply_serial_config)
@@ -409,6 +422,8 @@ class MainDashboard(QMainWindow):
             self._log.log(f"[CONFIG] Target serial port updated to: {data['serial_port']}", "INFO")
 
     def closeEvent(self, event):
+        if hasattr(self, "_page_system_check"):
+            self._page_system_check.stop_mic_monitor()
         self._serial_bridge.disconnect()
         event.accept()
 
