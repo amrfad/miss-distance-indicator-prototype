@@ -124,6 +124,15 @@ _PARAM_SCHEMA = [
         "unit": None,
     },
     {
+        "key": "sdr_ipc_host",
+        "label": "SDR IPC Host",
+        "description": "Host loopback untuk komunikasi TCP dengan SDR daemon",
+        "type": "string",
+        "default": "127.0.0.1",
+        "requires_restart": False,
+        "unit": None,
+    },
+    {
         "key": "sdr_ipc_port",
         "label": "SDR IPC Port",
         "description": "Port TCP loopback untuk komunikasi dengan SDR daemon",
@@ -160,7 +169,7 @@ _PARAM_SCHEMA = [
         "label": "SDR Python (radioconda)",
         "description": "Path interpreter radioconda untuk daemon SDR Ground",
         "type": "string",
-        "default": "",
+        "default": os.path.join(os.path.expanduser("~"), "radioconda", "python.exe"),
         "requires_restart": False,
         "unit": None,
     },
@@ -170,7 +179,7 @@ _PARAM_SCHEMA = [
         "description": "Baud rate komunikasi serial; harus cocok dengan drone",
         "type": "integer",
         "default": 230400,
-        "enum": [9600, 115200, 230400, 460800],
+        "enum": [9600, 19200, 38400, 57600, 115200, 230400],
         "requires_restart": False,
         "unit": "bps",
     },
@@ -189,9 +198,9 @@ _PARAM_SCHEMA = [
     {
         "key": "serial_port",
         "label": "Serial Port",
-        "description": "Device path/COM port (e.g., COM3, /dev/ttyUSB0)",
+        "description": "Device path/COM port (e.g., AUTO, COM3, /dev/ttyUSB0)",
         "type": "string",
-        "default": "COM3",
+        "default": "AUTO",
         "requires_restart": False,
         "unit": None,
     },
@@ -290,6 +299,7 @@ _PARAM_SCHEMA = [
 ]
 
 _ALL_KEYS: set = {s["key"] for s in _PARAM_SCHEMA}
+_SCHEMA_BY_KEY: dict = {s["key"]: s for s in _PARAM_SCHEMA}
 
 
 # ─────────────────────────────────────────────
@@ -415,6 +425,7 @@ class GroundConfigManager:
                     raise UnknownParamError(key)
 
             updated_fields = []
+            requires_restart = False
 
             for key, value in changes.items():
                 if key == "mic_positions":
@@ -432,8 +443,12 @@ class GroundConfigManager:
                             float(coords["z"]),
                         ])
                         updated_fields.append(f"mic_positions.{mic_name}")
+                    if _SCHEMA_BY_KEY[key].get("requires_restart"):
+                        requires_restart = True
                 else:
                     coerced = self._coerce(key, value)
+                    if coerced != self._config.get(key) and _SCHEMA_BY_KEY[key].get("requires_restart"):
+                        requires_restart = True
                     self._config[key] = coerced
                     updated_fields.append(key)
 
@@ -441,7 +456,7 @@ class GroundConfigManager:
 
             return {
                 "updated": updated_fields,
-                "requires_restart": False,
+                "requires_restart": requires_restart,
                 "message": f"{len(updated_fields)} field updated successfully",
             }
 
@@ -498,31 +513,52 @@ class GroundConfigManager:
 
     @staticmethod
     def _coerce(key: str, value: Any) -> Any:
-        """Coerce value ke tipe yang benar berdasarkan schema."""
-        schema = next((s for s in _PARAM_SCHEMA if s["key"] == key), None)
+        """Coerce dan validasi value berdasarkan schema (type, enum, min, max)."""
+        schema = _SCHEMA_BY_KEY.get(key)
         if schema is None:
             return value
         typ = schema["type"]
         try:
             if typ == "integer":
-                return int(value)
+                coerced = int(value)
             elif typ == "number":
-                return float(value)
+                coerced = float(value)
             elif typ == "boolean":
                 if isinstance(value, bool):
-                    return value
-                return str(value).lower() in ("true", "1", "yes")
+                    coerced = value
+                else:
+                    coerced = str(value).lower() in ("true", "1", "yes")
             elif typ == "array":
                 if isinstance(value, list):
-                    return value
-                raise ValidationError(f"'{key}' harus berupa array", key)
+                    coerced = value
+                else:
+                    raise ValidationError(f"'{key}' harus berupa array", key)
             else:
-                return str(value)
+                coerced = str(value)
+        except ValidationError:
+            raise
         except (ValueError, TypeError) as e:
             raise ValidationError(
                 f"Tipe tidak valid untuk '{key}': expected {typ}, got {type(value).__name__}",
                 key,
             ) from e
+
+        if "enum" in schema and coerced not in schema["enum"]:
+            raise ValidationError(
+                f"Nilai '{coerced}' tidak valid untuk '{key}'. Pilihan: {schema['enum']}",
+                key,
+            )
+        if "min" in schema and coerced < schema["min"]:
+            raise ValidationError(
+                f"Nilai '{key}' ({coerced}) di bawah batas minimum ({schema['min']})",
+                key,
+            )
+        if "max" in schema and coerced > schema["max"]:
+            raise ValidationError(
+                f"Nilai '{key}' ({coerced}) melebihi batas maksimum ({schema['max']})",
+                key,
+            )
+        return coerced
 
     @staticmethod
     def _validate_mic_coords(mic_name: str, coords: Any) -> None:

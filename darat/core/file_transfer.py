@@ -5,7 +5,7 @@ Diekstrak dari EventGUI.process_received_data / handle_file_start / handle_file_
 """
 
 import os
-from .config import SUPPORTED_EXTENSIONS
+from .config_manager import get_global_config_manager
 
 
 def get_file_type(ext: str) -> str:
@@ -115,10 +115,14 @@ class FileTransferManager:
                 self.expected_file_size = int(parts[2])
 
                 file_ext = os.path.splitext(self.current_file_name)[1].lower()
-                if file_ext not in SUPPORTED_EXTENSIONS:
+                supported_exts = [
+                    ext.lower()
+                    for ext in get_global_config_manager().get("supported_extensions")
+                ]
+                if file_ext not in supported_exts:
                     self._log(
                         f"Unsupported file type: {file_ext}. "
-                        f"Only {', '.join(SUPPORTED_EXTENSIONS)} are supported."
+                        f"Only {', '.join(supported_exts)} are supported."
                     )
                     return
 

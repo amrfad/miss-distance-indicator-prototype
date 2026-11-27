@@ -141,9 +141,11 @@ class RaspiConfigPanel(QWidget):
 
         # Stacked widget for category pages
         self._stacked_widget = QStackedWidget()
+        self._sdr_section = self._group_sdr()
         self._stacked_widget.addWidget(
-            _make_page(self._group_operation(), self._group_sdr(), self._group_output_files())
+            _make_page(self._group_operation(), self._sdr_section, self._group_output_files())
         )
+        self._on_operation_mode_changed()
         self._stacked_widget.addWidget(_make_page(self._group_audio(), self._group_streaming()))
         self._stacked_widget.addWidget(_make_page(self._group_tdoa(), self._group_detection()))
         self._stacked_widget.addWidget(_make_page(self._group_filter_method()))
@@ -192,6 +194,7 @@ class RaspiConfigPanel(QWidget):
 
         self.operation_mode = QComboBox()
         self.operation_mode.addItems(["SDR", "ONLINE", "OFFLINE"])
+        self.operation_mode.currentTextChanged.connect(self._on_operation_mode_changed)
         sec.add_row(_lbl("Operation Mode:", restart=True), self.operation_mode)
 
         self.active_profile = QComboBox()
@@ -244,20 +247,30 @@ class RaspiConfigPanel(QWidget):
     def _group_output_files(self) -> CollapsibleSection:
         sec = CollapsibleSection("SERIAL && OUTPUT FILES")
 
+        # ── Container Khusus Serial (ONLINE mode) ──
+        self._serial_container = QWidget()
+        serial_layout = QFormLayout(self._serial_container)
+        serial_layout.setContentsMargins(0, 0, 0, 0)
+        serial_layout.setSpacing(8)
+        serial_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        serial_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+
         self.serial_port = QLineEdit()
         self.serial_port.setPlaceholderText("/dev/ttyUSB0")
-        sec.add_row(_lbl("Serial Port:", restart=True), self.serial_port)
+        serial_layout.addRow(_lbl("Serial Port:", restart=True), self.serial_port)
 
         self.baud_rate = QComboBox()
         self.baud_rate.setObjectName("monoField")
         self.baud_rate.addItems(["9600", "19200", "38400", "57600", "115200", "230400"])
-        sec.add_row(_lbl("Baud Rate:", restart=True), self.baud_rate)
+        serial_layout.addRow(_lbl("Baud Rate:", restart=True), self.baud_rate)
 
         self.serial_timeout = QDoubleSpinBox()
         self.serial_timeout.setObjectName("monoField")
         self.serial_timeout.setRange(1.0, 30.0)
         self.serial_timeout.setSuffix(" s")
-        sec.add_row(_lbl("Serial Timeout:", restart=True), self.serial_timeout)
+        serial_layout.addRow(_lbl("Serial Timeout:", restart=True), self.serial_timeout)
+
+        sec.add_widget(self._serial_container)
 
         self.events_csv = QLineEdit()
         self.events_csv.setPlaceholderText("detected_events.csv")
@@ -272,6 +285,13 @@ class RaspiConfigPanel(QWidget):
         sec.add_row(_lbl("TDOA JSON:", restart=True), self.tdoa_json)
 
         return sec
+
+    def _on_operation_mode_changed(self):
+        mode = self.operation_mode.currentText().upper()
+        if hasattr(self, "_sdr_section"):
+            self._sdr_section.setVisible(mode == "SDR")
+        if hasattr(self, "_serial_container"):
+            self._serial_container.setVisible(mode == "ONLINE")
 
     def _group_audio(self) -> CollapsibleSection:
         sec = CollapsibleSection("AUDIO CONFIGURATION")
@@ -525,6 +545,7 @@ class RaspiConfigPanel(QWidget):
         c = self.current_config
 
         self.operation_mode.setCurrentText(c.get("operation_mode", "SDR"))
+        self._on_operation_mode_changed()
         self.sdr_ipc_host.setText(str(c.get("sdr_ipc_host", "127.0.0.1")))
         self.sdr_air_ipc_port.setValue(int(c.get("sdr_air_ipc_port", 5006)))
         self.sdr_python_path.setText(str(c.get("sdr_python_path", "")))
