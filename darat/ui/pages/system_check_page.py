@@ -502,13 +502,19 @@ class SystemCheckPage(QWidget):
                 "detail": "Dilewati (opsional / non-SIYI).",
             }
         if self._serial is not None and self._serial.is_connected():
-            port = getattr(self._serial.manager, "port", "connected")
+            mgr = getattr(self._serial, "manager", None)
+            if mgr is not None:
+                port = getattr(mgr, "port", "connected")
+                detail = "Koneksi serial ke drone aktif."
+            else:
+                port = "SDR Link"
+                detail = "Koneksi SDR Radio Link ke drone aktif."
             return {
                 "id": "CHK-08",
                 "name": "Serial / SIYI Link",
                 "status": "PASS",
                 "measured": str(port),
-                "detail": "Koneksi serial ke drone aktif.",
+                "detail": detail,
             }
         return {
             "id": "CHK-08",
