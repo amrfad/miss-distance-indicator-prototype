@@ -66,8 +66,10 @@ class LaptopConfigPanel(QWidget):
 
     _DEFAULTS = {
         "comm_backend": "SERIAL",
+        "sdr_ipc_host": "127.0.0.1",
         "sdr_ipc_port": 5005,
         "sdr_mock_mode": False,
+        "sdr_connect_timeout": 35.0,
         "sdr_python_path": os.path.join(os.path.expanduser("~"), "radioconda", "python.exe"),
         "serial_port": "AUTO",
         "baud_rate": 230400,
@@ -76,6 +78,8 @@ class LaptopConfigPanel(QWidget):
         "drone_port": 5000,
         "speed_of_sound": 343.0,
         "cluster_eps": 1.0,
+        "multilat_aggregate": "median",
+        "multilat_max_norm": 200.0,
         "mic_positions": _DEFAULT_MIC_POSITIONS,
     }
 
@@ -135,21 +139,53 @@ class LaptopConfigPanel(QWidget):
     def _group_serial(self) -> CollapsibleSection:
         sec = CollapsibleSection("COMMUNICATION & TELEMETRY")
 
+        def _make_lbl(text: str) -> QLabel:
+            lbl = QLabel(text)
+            lbl.setObjectName("formLabel")
+            lbl.setFixedWidth(150)
+            lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            return lbl
+
+        def _make_subform() -> tuple[QWidget, QFormLayout]:
+            w = QWidget()
+            fl = QFormLayout(w)
+            fl.setContentsMargins(0, 0, 0, 0)
+            fl.setSpacing(8)
+            fl.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            fl.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+            return w, fl
+
         self.comm_backend = QComboBox()
         self.comm_backend.setObjectName("monoField")
         self.comm_backend.addItems(["SERIAL", "SDR"])
         self.comm_backend.setToolTip("Pilih backend komunikasi: SERIAL (UART kabel) atau SDR (USRP B210)")
         sec.add_row("Comm Mode:", self.comm_backend)
 
+        # ── Container Khusus SDR ──
+        self._sdr_container, sdr_layout = _make_subform()
+
+        self.sdr_ipc_host = QLineEdit()
+        self.sdr_ipc_host.setObjectName("monoField")
+        self.sdr_ipc_host.setPlaceholderText("127.0.0.1")
+        sdr_layout.addRow(_make_lbl("SDR IPC Host:"), self.sdr_ipc_host)
+
         self.sdr_ipc_port = QSpinBox()
         self.sdr_ipc_port.setObjectName("monoField")
         self.sdr_ipc_port.setRange(1024, 65535)
         self.sdr_ipc_port.setValue(5005)
-        sec.add_row("SDR IPC Port:", self.sdr_ipc_port)
+        sdr_layout.addRow(_make_lbl("SDR IPC Port:"), self.sdr_ipc_port)
 
         self.sdr_mock_mode = QCheckBox("Simulasi (Mock tanpa USRP B210)")
         self.sdr_mock_mode.setObjectName("monoField")
-        sec.add_row("SDR Mock Mode:", self.sdr_mock_mode)
+        sdr_layout.addRow(_make_lbl("SDR Mock Mode:"), self.sdr_mock_mode)
+
+        self.sdr_connect_timeout = QDoubleSpinBox()
+        self.sdr_connect_timeout.setObjectName("monoField")
+        self.sdr_connect_timeout.setRange(5.0, 120.0)
+        self.sdr_connect_timeout.setSingleStep(5.0)
+        self.sdr_connect_timeout.setDecimals(1)
+        self.sdr_connect_timeout.setSuffix(" s")
+        sdr_layout.addRow(_make_lbl("SDR Connect Timeout:"), self.sdr_connect_timeout)
 
         py_container = QWidget()
         py_layout = QHBoxLayout(py_container)
@@ -164,7 +200,12 @@ class LaptopConfigPanel(QWidget):
         self.btn_browse_sdr_py.clicked.connect(self._browse_sdr_python)
         py_layout.addWidget(self.sdr_python_path, stretch=1)
         py_layout.addWidget(self.btn_browse_sdr_py, stretch=0)
-        sec.add_row("SDR Python Path:", py_container)
+        sdr_layout.addRow(_make_lbl("SDR Python Path:"), py_container)
+
+        sec.add_widget(self._sdr_container)
+
+        # ── Container Khusus Serial ──
+        self._serial_container, serial_layout = _make_subform()
 
         port_container = QWidget()
         port_layout = QHBoxLayout(port_container)
@@ -185,26 +226,36 @@ class LaptopConfigPanel(QWidget):
         port_layout.addWidget(self.serial_port, stretch=1)
         port_layout.addWidget(self.btn_refresh_ports, stretch=0)
 
-        sec.add_row("Serial Port:", port_container)
+        serial_layout.addRow(_make_lbl("Serial Port:"), port_container)
 
         self.baud_rate = QComboBox()
         self.baud_rate.setObjectName("monoField")
         self.baud_rate.addItems(["9600", "19200", "38400", "57600", "115200", "230400"])
-        sec.add_row("Baud Rate:", self.baud_rate)
+        serial_layout.addRow(_make_lbl("Baud Rate:"), self.baud_rate)
 
         baud_warn = QLabel("Must match Raspberry Pi baud rate")
         baud_warn.setObjectName("labelRestart")
         baud_warn.setStyleSheet("font-size: 10px; margin-left: 8px; color: #64748b;")
-        sec.add_row("", baud_warn)
+        serial_layout.addRow(_make_lbl(""), baud_warn)
 
         self.serial_timeout = QDoubleSpinBox()
         self.serial_timeout.setObjectName("monoField")
-        self.serial_timeout.setRange(0.1, 10.0)
+        self.serial_timeout.setRange(0.1, 30.0)
         self.serial_timeout.setSingleStep(0.1)
         self.serial_timeout.setSuffix(" s")
-        sec.add_row("Timeout:", self.serial_timeout)
+        serial_layout.addRow(_make_lbl("Timeout:"), self.serial_timeout)
+
+        sec.add_widget(self._serial_container)
+
+        self.comm_backend.currentTextChanged.connect(self._on_comm_backend_changed)
+        self._on_comm_backend_changed()
 
         return sec
+
+    def _on_comm_backend_changed(self):
+        is_sdr = self.comm_backend.currentText().upper() == "SDR"
+        self._sdr_container.setVisible(is_sdr)
+        self._serial_container.setVisible(not is_sdr)
 
     def _group_network(self) -> CollapsibleSection:
         sec = CollapsibleSection("NETWORK SETTINGS")
@@ -226,7 +277,7 @@ class LaptopConfigPanel(QWidget):
 
         self.speed_of_sound = QDoubleSpinBox()
         self.speed_of_sound.setObjectName("monoField")
-        self.speed_of_sound.setRange(300.0, 380.0)
+        self.speed_of_sound.setRange(330.0, 360.0)
         self.speed_of_sound.setSingleStep(0.1)
         self.speed_of_sound.setDecimals(1)
         self.speed_of_sound.setSuffix(" m/s")
@@ -234,12 +285,27 @@ class LaptopConfigPanel(QWidget):
 
         self.cluster_eps = QDoubleSpinBox()
         self.cluster_eps.setObjectName("monoField")
-        self.cluster_eps.setRange(0.1, 20.0)
+        self.cluster_eps.setRange(0.1, 10.0)
         self.cluster_eps.setSingleStep(0.1)
         self.cluster_eps.setDecimals(1)
         self.cluster_eps.setSuffix(" m")
         self.cluster_eps.setToolTip("Bucher-Misra cluster grouping threshold (CLUSTER_EPS)")
         sec.add_row("Cluster EPS:", self.cluster_eps)
+
+        self.multilat_aggregate = QComboBox()
+        self.multilat_aggregate.setObjectName("monoField")
+        self.multilat_aggregate.addItems(["median", "mean", "cluster"])
+        self.multilat_aggregate.setToolTip("Metode agregasi subset untuk Rotating Multilateration")
+        sec.add_row("Multilat Aggregate:", self.multilat_aggregate)
+
+        self.multilat_max_norm = QDoubleSpinBox()
+        self.multilat_max_norm.setObjectName("monoField")
+        self.multilat_max_norm.setRange(10.0, 1000.0)
+        self.multilat_max_norm.setSingleStep(10.0)
+        self.multilat_max_norm.setDecimals(1)
+        self.multilat_max_norm.setSuffix(" m")
+        self.multilat_max_norm.setToolTip("Batas jarak fisik maksimum solusi multilaterasi")
+        sec.add_row("Multilat Max Range:", self.multilat_max_norm)
 
         return sec
 
@@ -452,21 +518,28 @@ class LaptopConfigPanel(QWidget):
 
         if hasattr(self, "comm_backend"):
             self.comm_backend.setCurrentText(str(c.get("comm_backend", "SERIAL")))
+        if hasattr(self, "sdr_ipc_host"):
+            self.sdr_ipc_host.setText(str(c.get("sdr_ipc_host", "127.0.0.1")))
         if hasattr(self, "sdr_ipc_port"):
             self.sdr_ipc_port.setValue(int(c.get("sdr_ipc_port", 5005)))
         if hasattr(self, "sdr_mock_mode"):
             self.sdr_mock_mode.setChecked(bool(c.get("sdr_mock_mode", False)))
+        if hasattr(self, "sdr_connect_timeout"):
+            self.sdr_connect_timeout.setValue(float(c.get("sdr_connect_timeout", 35.0)))
         if hasattr(self, "sdr_python_path"):
             default_rc = os.path.join(os.path.expanduser("~"), "radioconda", "python.exe")
             self.sdr_python_path.setText(str(c.get("sdr_python_path", default_rc)))
-        self._update_serial_port_selection(c.get("serial_port", "COM3"))
+        self._update_serial_port_selection(c.get("serial_port", "AUTO"))
         self.baud_rate.setCurrentText(str(c.get("baud_rate", 230400)))
         self.serial_timeout.setValue(c.get("serial_timeout", 1.0))
         self.raspi_ip.setText(c.get("raspi_ip", "10.99.99.2"))
         self.drone_port.setValue(c.get("drone_port", 5000))
         self.speed_of_sound.setValue(c.get("speed_of_sound", 343.0))
         self.cluster_eps.setValue(c.get("cluster_eps", 1.0))
+        self.multilat_aggregate.setCurrentText(str(c.get("multilat_aggregate", "median")))
+        self.multilat_max_norm.setValue(float(c.get("multilat_max_norm", 200.0)))
         self._populate_mic_positions(c.get("mic_positions", _DEFAULT_MIC_POSITIONS))
+        self._on_comm_backend_changed()
 
     def _populate_mic_positions(self, positions: dict):
         for mic_key, coords in positions.items():
@@ -478,8 +551,10 @@ class LaptopConfigPanel(QWidget):
     def _get_values_from_ui(self) -> dict:
         return {
             "comm_backend": self.comm_backend.currentText() if hasattr(self, "comm_backend") else "SERIAL",
+            "sdr_ipc_host": self.sdr_ipc_host.text().strip() if hasattr(self, "sdr_ipc_host") else "127.0.0.1",
             "sdr_ipc_port": self.sdr_ipc_port.value() if hasattr(self, "sdr_ipc_port") else 5005,
             "sdr_mock_mode": self.sdr_mock_mode.isChecked() if hasattr(self, "sdr_mock_mode") else False,
+            "sdr_connect_timeout": self.sdr_connect_timeout.value() if hasattr(self, "sdr_connect_timeout") else 35.0,
             "sdr_python_path": self.sdr_python_path.text() if hasattr(self, "sdr_python_path") else "", 
             "serial_port": self._get_serial_port_value(),
             "baud_rate": int(self.baud_rate.currentText()),
@@ -488,6 +563,8 @@ class LaptopConfigPanel(QWidget):
             "drone_port": self.drone_port.value(),
             "speed_of_sound": self.speed_of_sound.value(),
             "cluster_eps": self.cluster_eps.value(),
+            "multilat_aggregate": self.multilat_aggregate.currentText(),
+            "multilat_max_norm": self.multilat_max_norm.value(),
             "mic_positions": self._get_mic_positions_from_ui(),
         }
 

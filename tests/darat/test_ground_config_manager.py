@@ -31,6 +31,12 @@ class TestGroundConfigManager(unittest.TestCase):
     def test_load_defaults(self):
         cfg = self.manager.get_all()
         self.assertEqual(cfg["baud_rate"], 230400)
+        self.assertEqual(cfg["serial_port"], "AUTO")
+        self.assertEqual(cfg["sdr_ipc_host"], "127.0.0.1")
+        self.assertEqual(
+            cfg["sdr_python_path"],
+            os.path.join(os.path.expanduser("~"), "radioconda", "python.exe"),
+        )
         self.assertEqual(cfg["speed_of_sound"], 343.0)
         self.assertIn("mic_positions", cfg)
         self.assertIn("mic0", cfg["mic_positions"])
@@ -79,7 +85,7 @@ class TestGroundConfigManager(unittest.TestCase):
         self.assertIn("mic3", cfg["mic_positions"])
 
     def test_reset(self):
-        self.manager.update({"speed_of_sound": 300.0})
+        self.manager.update({"speed_of_sound": 350.0})
         self.manager.reset()
         
         cfg = self.manager.get_all()
@@ -104,6 +110,39 @@ class TestGroundConfigManager(unittest.TestCase):
         with self.assertRaises(ValidationError) as ctx:
             self.manager.update(changes)
         self.assertIn("missing field", str(ctx.exception).lower())
+
+    def test_validation_enum_and_range(self):
+        # Valid UI-aligned baud_rate
+        self.manager.update({"baud_rate": 57600})
+        self.assertEqual(self.manager.get("baud_rate"), 57600)
+
+        # Invalid enum values
+        for bad in ({"baud_rate": 1234}, {"comm_backend": "WIFI"}, {"multilat_aggregate": "mode"}):
+            with self.assertRaises(ValidationError):
+                self.manager.update(bad)
+
+        # Out-of-range numeric values
+        for bad in (
+            {"speed_of_sound": 300.0},
+            {"speed_of_sound": 370.0},
+            {"cluster_eps": 0.05},
+            {"cluster_eps": 15.0},
+            {"serial_timeout": 35.0},
+        ):
+            with self.assertRaises(ValidationError):
+                self.manager.update(bad)
+
+    def test_requires_restart_dynamic(self):
+        # Changing comm_backend triggers requires_restart=True
+        res_changed = self.manager.update({"comm_backend": "SDR"})
+        self.assertTrue(res_changed["requires_restart"])
+
+        # Same value or non-restart param returns requires_restart=False
+        res_same = self.manager.update({"comm_backend": "SDR"})
+        self.assertFalse(res_same["requires_restart"])
+
+        res_other = self.manager.update({"baud_rate": 115200})
+        self.assertFalse(res_other["requires_restart"])
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
