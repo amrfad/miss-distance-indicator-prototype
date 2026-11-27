@@ -61,7 +61,7 @@ class AudioProcessor:
         print(f"[PROCESSOR] Output format: {output_format} -> {self.sf_subtype}")
         print(f"[PROCESSOR] Available filters: {filter_registry.list_available_methods()}")
         
-    def extract_channels(self, wav_path, output_dir, sr_override=None, channel_indices=None, normalize=None):
+    def extract_channels(self, wav_path, output_dir, sr_override=None, channel_indices=None, normalize=None, mic_names=None):
         """
         Ekstrak channel tertentu dari file multi-channel
         
@@ -71,6 +71,7 @@ class AudioProcessor:
             sr_override (int, optional): Override sample rate jika perlu
             channel_indices (tuple, optional): Override indices channel yang akan diekstrak
             normalize (bool): Lakukan normalisasi output
+            mic_names (list[str], optional): Nama asli tiap mic untuk penamaan file output
             
         Returns:
             tuple: (original_files, data, sr, actual_duration)
@@ -84,6 +85,7 @@ class AudioProcessor:
             
         # Use provided indices or default
         indices_to_use = channel_indices if channel_indices is not None else self.channel_indices
+        names_to_use = list(mic_names) if mic_names is not None else [f"mic{i}" for i in range(len(indices_to_use))]
             
         try:
             # Load audio file
@@ -100,8 +102,9 @@ class AudioProcessor:
             # Ekstrak setiap channel yang diminta
             original_files = []
             for i, idx in enumerate(indices_to_use):
+                mname = names_to_use[i] if i < len(names_to_use) else f"mic{i}"
                 if idx >= n_ch:
-                    print(f"[WARNING] Channel {idx} tidak ada, skip mic{i}")
+                    print(f"[WARNING] Channel {idx} tidak ada, skip {mname}")
                     continue
                     
                 ch = data[:, idx]
@@ -112,12 +115,12 @@ class AudioProcessor:
                     if peak > 0:
                         ch = ch / peak
                 
-                fname = os.path.join(output_dir, f"mic{i}_original.wav")
+                fname = os.path.join(output_dir, f"{mname}_original.wav")
                 
                 # Write dengan format yang sesuai dari device profile
                 try:
                     sf.write(fname, ch, sr, subtype=self.sf_subtype)
-                    print(f"[EXTRACT] Saved mic{i} as {self.sf_subtype}")
+                    print(f"[EXTRACT] Saved {mname} as {self.sf_subtype}")
                 except Exception as e:
                     print(f"[WARNING] Failed to save as {self.sf_subtype}, using default: {e}")
                     sf.write(fname, ch, sr)
@@ -132,7 +135,7 @@ class AudioProcessor:
             return [], None, None, 0
     
     def filter_channels(self, data, sr, output_dir,
-                       channel_indices=None):
+                       channel_indices=None, mic_names=None):
         """
         Filter setiap channel menggunakan metode yang dikonfigurasi via filter_registry.
 
@@ -181,6 +184,7 @@ class AudioProcessor:
         # dan overwrite per-channel setelah filtering.
         filtered_data = data.copy()
         indices_to_use = channel_indices if channel_indices is not None else self.channel_indices
+        names_to_use = list(mic_names) if mic_names is not None else [f"mic{i}" for i in range(len(indices_to_use))]
         filtered_files = []
         n_ch = data.shape[1]
 
@@ -188,8 +192,9 @@ class AudioProcessor:
             if idx >= n_ch:
                 continue
 
+            mname = names_to_use[i] if i < len(names_to_use) else f"mic{i}"
             ch = data[:, idx]
-            print(f"[FILTER] Processing mic{i} (channel {idx})...")
+            print(f"[FILTER] Processing {mname} (channel {idx})...")
 
             try:
                 chf = filter_instance.apply(ch, sr)
@@ -206,7 +211,7 @@ class AudioProcessor:
                 filtered_data[:, idx] = chf
 
                 # Simpan file hasil
-                fname = os.path.join(output_dir, f"mic{i}_filtered.wav")
+                fname = os.path.join(output_dir, f"{mname}_filtered.wav")
                 try:
                     sf.write(fname, chf, sr, subtype=self.sf_subtype)
                 except Exception as e:
@@ -216,12 +221,12 @@ class AudioProcessor:
                 filtered_files.append(fname)
 
             except Exception as e:
-                print(f"[ERROR] Filter mic{i} failed: {e}")
+                print(f"[ERROR] Filter {mname} failed: {e}")
 
         print(f"[FILTER] Completed {len(filtered_files)} files dengan metode '{method_key}'")
         return filtered_files, filtered_data
     
-    def save_event_clips(self, data, sr, events, output_dir, padding=0.25, channel_indices=None):
+    def save_event_clips(self, data, sr, events, output_dir, padding=0.25, channel_indices=None, mic_names=None):
         """
         Potong dan simpan klip audio untuk setiap event
         
@@ -232,6 +237,7 @@ class AudioProcessor:
             output_dir (str): Directory session
             padding (float): Padding waktu dalam detik (sebelum dan sesudah)
             channel_indices (tuple, optional): Override indices channel
+            mic_names (list[str], optional): Nama asli tiap mic
             
         Returns:
             list: List of event dicts dengan info file path
@@ -240,6 +246,7 @@ class AudioProcessor:
             return []
             
         indices_to_use = channel_indices if channel_indices is not None else self.channel_indices
+        names_to_use = list(mic_names) if mic_names is not None else [f"mic{i}" for i in range(len(indices_to_use))]
         processed_events = []
         n_samples = data.shape[0]
         
@@ -262,11 +269,12 @@ class AudioProcessor:
                 if original_idx >= data.shape[1]:
                     continue
                     
+                mname = names_to_use[ch_idx] if ch_idx < len(names_to_use) else f"mic{ch_idx}"
                 # Slice audio
                 audio_slice = data[start_sample:end_sample, original_idx]
                 
                 # Save file
-                filename = f"mic{ch_idx}.wav"
+                filename = f"{mname}.wav"
                 filepath = os.path.join(event_dir, filename)
                 
                 try:
@@ -275,7 +283,7 @@ class AudioProcessor:
                     print(f"[WARNING] Failed to save as {self.sf_subtype}, using default: {e}")
                     sf.write(filepath, audio_slice, sr)
                     
-                event_files[f"mic{ch_idx}"] = os.path.join(event_dir_name, filename)
+                event_files[mname] = os.path.join(event_dir_name, filename)
             
             processed_events.append({
                 "event_number": i,

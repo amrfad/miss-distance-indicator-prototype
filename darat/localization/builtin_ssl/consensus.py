@@ -49,32 +49,34 @@ _DEFAULT_REFINE_STEP = 0.1    # m
 # UTILITAS TDOA
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _get_tdoa(tdoa_dict: dict, m_i: str, m_j: str, n_mics: int) -> Optional[float]:
+def _get_tdoa(tdoa_dict: dict, m_i: str, m_j: str, mic_names) -> Optional[float]:
     if f"{m_i}-{m_j}" in tdoa_dict:
         return tdoa_dict[f"{m_i}-{m_j}"]
     if f"{m_j}-{m_i}" in tdoa_dict:
         return -tdoa_dict[f"{m_j}-{m_i}"]
-    for k in range(n_mics):
-        mid = f"mic{k}"
+    candidates = [f"mic{k}" for k in range(mic_names)] if isinstance(mic_names, int) else list(mic_names)
+    for mid in candidates:
         if mid in (m_i, m_j):
             continue
-        v1 = tdoa_dict.get(f"{m_i}-{mid}") or (
-            -tdoa_dict[f"{mid}-{m_i}"] if f"{mid}-{m_i}" in tdoa_dict else None
-        )
-        v2 = tdoa_dict.get(f"{m_j}-{mid}") or (
-            -tdoa_dict[f"{mid}-{m_j}"] if f"{mid}-{m_j}" in tdoa_dict else None
-        )
+        v1 = tdoa_dict.get(f"{m_i}-{mid}")
+        if v1 is None and f"{mid}-{m_i}" in tdoa_dict:
+            v1 = -tdoa_dict[f"{mid}-{m_i}"]
+        v2 = tdoa_dict.get(f"{m_j}-{mid}")
+        if v2 is None and f"{mid}-{m_j}" in tdoa_dict:
+            v2 = -tdoa_dict[f"{mid}-{m_j}"]
         if v1 is not None and v2 is not None:
             return v1 - v2
     return None
 
 
-def _build_tdoa_table(tdoa_dict: dict, stations: np.ndarray, c: float, n_mics: int):
+def _build_tdoa_table(tdoa_dict: dict, stations: np.ndarray, c: float, mic_names):
     """Bangun tabel TDOA: list of (u, v, tdoa_seconds, max_dist, is_valid)."""
+    names = [f"mic{k}" for k in range(mic_names)] if isinstance(mic_names, int) else list(mic_names)
+    n_mics = len(names)
     table = []
     for u in range(n_mics):
         for v in range(u + 1, n_mics):
-            val = _get_tdoa(tdoa_dict, f"mic{u}", f"mic{v}", n_mics)
+            val = _get_tdoa(tdoa_dict, names[u], names[v], names)
             if val is None:
                 continue
             measured_m = val * c
@@ -251,8 +253,10 @@ def _pivot_4(sub_st, d_vec):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _collect_candidates(tdoa_dict: dict, stations: np.ndarray,
-                        c: float, n_mics: int) -> List[np.ndarray]:
+                        c: float, mic_names) -> List[np.ndarray]:
     """Kumpulkan kandidat dari 3 solver × P(n_mics,4) permutasi."""
+    names = [f"mic{k}" for k in range(mic_names)] if isinstance(mic_names, int) else list(mic_names)
+    n_mics = len(names)
     candidates = []
 
     for perm in itertools.permutations(range(n_mics), 4):
@@ -260,9 +264,9 @@ def _collect_candidates(tdoa_dict: dict, stations: np.ndarray,
         sub_st = stations[list(perm)]
 
         # ── Bucher-Misra ──
-        Rij = _get_tdoa(tdoa_dict, f"mic{mi}", f"mic{mj}", n_mics)
-        Rik = _get_tdoa(tdoa_dict, f"mic{mi}", f"mic{mk}", n_mics)
-        Rkl = _get_tdoa(tdoa_dict, f"mic{mk}", f"mic{ml}", n_mics)
+        Rij = _get_tdoa(tdoa_dict, names[mi], names[mj], names)
+        Rik = _get_tdoa(tdoa_dict, names[mi], names[mk], names)
+        Rkl = _get_tdoa(tdoa_dict, names[mk], names[ml], names)
         if not any(v is None for v in [Rij, Rik, Rkl]):
             d_Rij, d_Rik, d_Rkl = Rij*c, Rik*c, Rkl*c
             max_ij = np.linalg.norm(stations[mj]-stations[mi])
@@ -278,9 +282,9 @@ def _collect_candidates(tdoa_dict: dict, stations: np.ndarray,
                     pass
 
         # ── Chan-Ho & Pivot (butuh 3 TDOA) ──
-        t1 = _get_tdoa(tdoa_dict, f"mic{mi}", f"mic{mj}", n_mics)
-        t2 = _get_tdoa(tdoa_dict, f"mic{mi}", f"mic{mk}", n_mics)
-        t3 = _get_tdoa(tdoa_dict, f"mic{mi}", f"mic{ml}", n_mics)
+        t1 = _get_tdoa(tdoa_dict, names[mi], names[mj], names)
+        t2 = _get_tdoa(tdoa_dict, names[mi], names[mk], names)
+        t3 = _get_tdoa(tdoa_dict, names[mi], names[ml], names)
 
         if not any(v is None for v in [t1, t2, t3]):
             d_vec = np.array([-t1*c, -t2*c, -t3*c])
@@ -330,7 +334,7 @@ def solve(event_data: dict, mic_positions: dict, config: dict) -> tuple:
     refine_step = config.get("consensus_refine_step", _DEFAULT_REFINE_STEP)
     tdoa_data = event_data.get("tdoa", {})
 
-    mic_names = list(mic_positions.keys())
+    mic_names = sorted(list(mic_positions.keys()))
     n_mics = len(mic_names)
 
     if n_mics < 4:
@@ -343,10 +347,10 @@ def solve(event_data: dict, mic_positions: dict, config: dict) -> tuple:
             return [p["x"], p["y"], p["z"]]
         return list(p)
 
-    stations_arr = np.array([_pos(f"mic{k}") for k in range(n_mics)])
+    stations_arr = np.array([_pos(m) for m in mic_names])
 
     # Langkah 1: Kumpulkan kandidat
-    candidates = _collect_candidates(tdoa_data, stations_arr, c, n_mics)
+    candidates = _collect_candidates(tdoa_data, stations_arr, c, mic_names)
     if not candidates:
         print("[ERROR] Consensus: tidak ada kandidat terkumpul")
         return None, None, None
@@ -354,7 +358,7 @@ def solve(event_data: dict, mic_positions: dict, config: dict) -> tuple:
     print(f"[INFO] Consensus: {len(candidates)} kandidat dari 3 solver × permutasi")
 
     # Langkah 2: Bangun tabel TDOA
-    tdoa_table = _build_tdoa_table(tdoa_data, stations_arr, c, n_mics)
+    tdoa_table = _build_tdoa_table(tdoa_data, stations_arr, c, mic_names)
     if not tdoa_table:
         return None, None, None
 

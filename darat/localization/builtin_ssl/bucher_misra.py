@@ -127,23 +127,23 @@ def _solve_4station(
     return uniq
 
 
-def _get_tdoa(tdoa_dict: dict, m_i: str, m_j: str, n_mics: int) -> Optional[float]:
+def _get_tdoa(tdoa_dict: dict, m_i: str, m_j: str, mic_names) -> Optional[float]:
     """Ambil nilai TDOA (tau_i - tau_j) dengan transitivitas 1-hop."""
     if f"{m_i}-{m_j}" in tdoa_dict:
         return tdoa_dict[f"{m_i}-{m_j}"]
     if f"{m_j}-{m_i}" in tdoa_dict:
         return -tdoa_dict[f"{m_j}-{m_i}"]
     # Transitivitas
-    for k in range(n_mics):
-        mid = f"mic{k}"
+    candidates = [f"mic{k}" for k in range(mic_names)] if isinstance(mic_names, int) else list(mic_names)
+    for mid in candidates:
         if mid in (m_i, m_j):
             continue
-        v1 = tdoa_dict.get(f"{m_i}-{mid}") or (
-            -tdoa_dict[f"{mid}-{m_i}"] if f"{mid}-{m_i}" in tdoa_dict else None
-        )
-        v2 = tdoa_dict.get(f"{m_j}-{mid}") or (
-            -tdoa_dict[f"{mid}-{m_j}"] if f"{mid}-{m_j}" in tdoa_dict else None
-        )
+        v1 = tdoa_dict.get(f"{m_i}-{mid}")
+        if v1 is None and f"{mid}-{m_i}" in tdoa_dict:
+            v1 = -tdoa_dict[f"{mid}-{m_i}"]
+        v2 = tdoa_dict.get(f"{m_j}-{mid}")
+        if v2 is None and f"{mid}-{m_j}" in tdoa_dict:
+            v2 = -tdoa_dict[f"{mid}-{m_j}"]
         if v1 is not None and v2 is not None:
             return v1 - v2
     return None
@@ -231,9 +231,9 @@ def solve(event_data: dict, mic_positions: dict, config: dict) -> tuple:
             stations = [_pos(m) for m in (m_i, m_j, m_k, m_l)]
 
             try:
-                Rij = _get_tdoa(tdoa_data, m_i, m_j, n_mics)
-                Rik = _get_tdoa(tdoa_data, m_i, m_k, n_mics)
-                Rkl = _get_tdoa(tdoa_data, m_k, m_l, n_mics)
+                Rij = _get_tdoa(tdoa_data, m_i, m_j, mic_names)
+                Rik = _get_tdoa(tdoa_data, m_i, m_k, mic_names)
+                Rkl = _get_tdoa(tdoa_data, m_k, m_l, mic_names)
 
                 if any(v is None for v in [Rij, Rik, Rkl]):
                     continue

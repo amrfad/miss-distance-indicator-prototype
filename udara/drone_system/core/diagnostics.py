@@ -564,8 +564,12 @@ def analyze_mic_channels(
             "note": "",
         })
 
-    # Evaluasi noise floor relatif terhadap median mic aktif
-    active_dbs = [m["rms_db"] for m in raw_metrics if m["rms"] > 1e-5 and m["status"] != "MISSING"]
+    # Evaluasi noise floor relatif terhadap median mic aktif (non-dead & non-clip)
+    active_dbs = [
+        m["rms_db"]
+        for m in raw_metrics
+        if m["rms_db"] > -85.0 and m["clipped_samples"] == 0 and m["status"] != "MISSING"
+    ]
     median_db = float(np.median(active_dbs)) if active_dbs else -120.0
 
     loudest_mic: Optional[str] = None
@@ -578,9 +582,9 @@ def analyze_mic_channels(
             loudest_rms = m["rms"]
             loudest_mic = m["mic"]
 
-        if m["rms"] <= 1e-5:
+        if m["rms"] <= 1e-5 or m["rms_db"] <= -85.0 or (active_dbs and (median_db - m["rms_db"]) > 20.0):
             m["status"] = "DEAD"
-            m["note"] = "Sinyal flat/mati (RMS <= 1e-5)"
+            m["note"] = f"Sinyal mati/mic terlepas ({m['rms_db']:.1f} dBFS vs median {median_db:.1f} dBFS)"
         elif m["peak"] >= 0.99 or m["clipped_samples"] > 0:
             m["status"] = "CLIP"
             m["note"] = f"Hard clipping ({m['clipped_samples']} sample)"

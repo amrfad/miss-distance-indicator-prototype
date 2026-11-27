@@ -73,6 +73,17 @@ class TestMicAnalysis(unittest.TestCase):
         self.assertIn("mic0", chk["detail"])
         self.assertIn("mic1", chk["detail"])
 
+    def test_analyze_mic_channels_detects_unplugged_preamp_noise(self):
+        rng = np.random.default_rng(11)
+        data = rng.normal(0.0, 0.01, size=(4800, 12))  # ~ -40 dBFS
+        data[:, 6] = rng.normal(0.0, 0.00003, size=4800)  # ~ -90 dBFS (unplugged XLR preamp noise)
+
+        metrics, _ = diagnostics.analyze_mic_channels(data, (4, 5, 6, 7, 8, 9))
+        self.assertEqual(metrics[2]["status"], "DEAD")
+        chk = diagnostics.evaluate_mic_health_check(metrics)
+        self.assertEqual(chk["status"], "FAIL")
+        self.assertIn("mic2", chk["detail"])
+
 
 class TestAlsaAndPipeline(unittest.TestCase):
     @patch("drone_system.core.diagnostics.subprocess.run")

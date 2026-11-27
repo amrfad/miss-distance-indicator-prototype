@@ -24,6 +24,7 @@ from ..audio.recorder import AudioRecorder
 from ..audio.processor import AudioProcessor
 from ..audio.detector import EventDetector
 from ..audio.logger import DataLogger
+from ..audio.mic_health import assess_chunk_mic_health
 from ..tdoa.tdoa import calculate_all_tdoa
 from ..io.comms import SerialCommunicator
 from .config import (
@@ -332,12 +333,31 @@ class DroneAudioSystem:
             duration = data_np.shape[0] / sample_rate
             print(f"\n[CHUNK #{chunk_idx}] Processing {chunk_name} (offset: {chunk_offset_sec:.2f}s, dur: {duration:.2f}s)")
 
-            # 2. Extract & filter channels
+            # 1b. Per-chunk mic health detection (method-agnostic, isolasi sebelum DSP)
+            health = assess_chunk_mic_health(data_np, active_indices)
+            healthy_indices = health.healthy_indices
+            healthy_names = health.healthy_names
+            excluded_mics = health.excluded_mics
+
+            if excluded_mics:
+                print(
+                    f"[MIC HEALTH] Chunk #{chunk_idx}: {len(healthy_names)}/{len(active_indices)} mic sehat "
+                    f"| excluded={excluded_mics}"
+                )
+
+            if not healthy_indices:
+                print(f"[MIC HEALTH] Tidak ada mic sehat pada chunk #{chunk_idx}, skip DSP.")
+                if not keep_audio:
+                    shutil.rmtree(chunk_dir, ignore_errors=True)
+                return
+
+            # 2. Extract & filter channels (HANYA mic sehat, pertahankan nama mic asli)
             original_files, data, sr, actual_duration = self.processor.extract_channels(
                 chunk_wav_path,
                 chunk_dir,
                 sr_override=sample_rate,
-                channel_indices=active_indices
+                channel_indices=healthy_indices,
+                mic_names=healthy_names,
             )
             if not original_files:
                 print(f"[CHUNK] Ekstraksi channel gagal: {chunk_name}")
@@ -346,33 +366,44 @@ class DroneAudioSystem:
                 return
 
             filtered_files, filtered_data = self.processor.filter_channels(
-                data, sr, chunk_dir, channel_indices=active_indices
+                data, sr, chunk_dir, channel_indices=healthy_indices, mic_names=healthy_names
             )
 
-            # 3. Detect events
+            # 3. Detect events (hanya dari file *_filtered.wav milik mic sehat)
             events = self.detector.detect_events(chunk_dir)
 
             # 4. Cut event clips
             processed_events = self.processor.save_event_clips(
                 filtered_data, sr, events, chunk_dir,
                 padding=cfg.get("event_padding_sec", EVENT_PADDING_SEC),
-                channel_indices=active_indices
+                channel_indices=healthy_indices,
+                mic_names=healthy_names,
             )
 
-            # 5. Calculate TDOA
+            # 5. Calculate TDOA (hanya jika >= 3 mic sehat; jika 1-2 mic tetap lapor event-only)
             tdoa_results = []
             for event in processed_events:
-                start_sample = max(0, int(event["padded_start"] * sr))
-                end_sample = min(filtered_data.shape[0], int(event["padded_end"] * sr))
-                event_audio = filtered_data[start_sample:end_sample, :]
-                event_tdoa = calculate_all_tdoa(event_audio, sr, channel_indices=active_indices)
+                if len(healthy_indices) >= 3:
+                    start_sample = max(0, int(event["padded_start"] * sr))
+                    end_sample = min(filtered_data.shape[0], int(event["padded_end"] * sr))
+                    event_audio = filtered_data[start_sample:end_sample, :]
+                    event_tdoa = calculate_all_tdoa(
+                        event_audio,
+                        sr,
+                        channel_indices=healthy_indices,
+                        mic_names=healthy_names,
+                    )
+                    degraded_reason = None
+                else:
+                    event_tdoa = {}
+                    degraded_reason = "INSUFFICIENT_MICS"
 
                 orig_start = event.get("original_start", 0.0)
                 orig_end = event.get("original_end", 0.0)
                 abs_start = round(chunk_offset_sec + orig_start, 3)
                 abs_end = round(chunk_offset_sec + orig_end, 3)
 
-                tdoa_results.append({
+                ev_entry = {
                     "event_number": event["event_number"],
                     "session_id": self.current_session_id or "unknown_session",
                     "chunk_index": chunk_idx,
@@ -382,15 +413,19 @@ class DroneAudioSystem:
                     "event_end_in_chunk": orig_end,
                     "event_abs_start_sec": abs_start,
                     "event_abs_end_sec": abs_end,
-                    "tdoa": event_tdoa
-                })
+                    "active_mics": list(healthy_names),
+                    "excluded_mics": dict(excluded_mics),
+                    "tdoa": event_tdoa,
+                }
+                if degraded_reason:
+                    ev_entry["degraded_reason"] = degraded_reason
+                tdoa_results.append(ev_entry)
 
             # 6. Simpan TDOA JSON
             rec_status = self.recorder.get_status()
             profile_name = rec_status.get("profile", "Unknown")
-            profile = DEVICE_PROFILES.get(profile_name, {})
-            num_mics = profile.get("num_mics", 4)
-            num_tdoa_pairs = num_mics * (num_mics - 1) // 2
+            num_mics = len(healthy_names)
+            num_tdoa_pairs = num_mics * (num_mics - 1) // 2 if num_mics >= 3 else 0
 
             extra_info = {
                 "type": "TDOA_RESULTS",
@@ -401,6 +436,8 @@ class DroneAudioSystem:
                 "channels": rec_status.get("channels", 0),
                 "num_mics": num_mics,
                 "num_tdoa_pairs": num_tdoa_pairs,
+                "active_mics": list(healthy_names),
+                "excluded_mics": dict(excluded_mics),
             }
 
             tdoa_json_path = os.path.join(chunk_dir, "tdoa.json")

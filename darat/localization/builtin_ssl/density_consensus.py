@@ -54,7 +54,7 @@ def solve(event_data: dict, mic_positions: dict, config: dict) -> tuple:
     refine_step = config.get("consensus_refine_step", _DEFAULT_REFINE_STEP)
     tdoa_data = event_data.get("tdoa", {})
 
-    mic_names = list(mic_positions.keys())
+    mic_names = sorted(list(mic_positions.keys()))
     n_mics = len(mic_names)
 
     if n_mics < 4:
@@ -67,16 +67,16 @@ def solve(event_data: dict, mic_positions: dict, config: dict) -> tuple:
             return [p["x"], p["y"], p["z"]]
         return list(p)
 
-    stations_arr = np.array([_pos(f"mic{k}") for k in range(n_mics)])
+    stations_arr = np.array([_pos(m) for m in mic_names])
 
     # Langkah 1: Kumpulkan kandidat
-    candidates = _collect_candidates(tdoa_data, stations_arr, c, n_mics)
+    candidates = _collect_candidates(tdoa_data, stations_arr, c, mic_names)
     if not candidates:
         print("[ERROR] Density-Consensus: tidak ada kandidat terkumpul")
         return None, None, None
 
     # Langkah 2: Bangun tabel TDOA
-    tdoa_table = _build_tdoa_table(tdoa_data, stations_arr, c, n_mics)
+    tdoa_table = _build_tdoa_table(tdoa_data, stations_arr, c, mic_names)
     if not tdoa_table:
         return None, None, None
 

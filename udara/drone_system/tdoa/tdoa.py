@@ -52,7 +52,7 @@ def calculate_cross_correlation(sig1, sig2, fs):
     lag_samples = lags[peak_idx]
     return float(lag_samples) / float(fs)
 
-def calculate_all_tdoa_eccct(data, fs, channel_indices=None, smooth_ms=2.0, dec=10, do_closure=True):
+def calculate_all_tdoa_eccct(data, fs, channel_indices=None, smooth_ms=2.0, dec=10, do_closure=True, mic_names=None):
     """
     Menghitung TDOA menggunakan metode ECCCT:
     1. Ekstraksi power envelope per mic dengan boxcar smoothing (2 ms)
@@ -67,6 +67,7 @@ def calculate_all_tdoa_eccct(data, fs, channel_indices=None, smooth_ms=2.0, dec=
         smooth_ms (float): Smoothing envelope (ms)
         dec (int): Faktor desimasi
         do_closure (bool): Terapkan Gauss-Seidel closure tuning
+        mic_names (list[str], optional): Nama asli tiap channel aktif (default: mic0..mic{N-1})
         
     Returns:
         dict: Dictionary pasangan TDOA {"micX-micY": tau_detik}
@@ -77,6 +78,8 @@ def calculate_all_tdoa_eccct(data, fs, channel_indices=None, smooth_ms=2.0, dec=
     
     if n_active < 2:
         return {}
+
+    names = list(mic_names) if mic_names is not None else [f"mic{i}" for i in range(n_active)]
         
     # Ambil matriks data hanya untuk channel aktif
     active_data = data[:, physical_indices]
@@ -106,12 +109,12 @@ def calculate_all_tdoa_eccct(data, fs, channel_indices=None, smooth_ms=2.0, dec=
     results = {}
     for log_idx1, log_idx2 in logical_pairs:
         tau_val = final_tdoa.get((log_idx1, log_idx2), 0.0)
-        key = f"mic{log_idx1}-mic{log_idx2}"
+        key = f"{names[log_idx1]}-{names[log_idx2]}"
         results[key] = round(float(tau_val), 7)
         
     return results
 
-def calculate_all_tdoa(data, fs, channel_indices=None):
+def calculate_all_tdoa(data, fs, channel_indices=None, mic_names=None):
     """
     Menghitung TDOA untuk semua pasangan channel.
     Mendukung metode:
@@ -124,6 +127,7 @@ def calculate_all_tdoa(data, fs, channel_indices=None):
         fs (int): Sampling rate
         channel_indices (list, optional): List index channel yang aktif. 
                                           Jika None, gunakan semua channel di data.
+        mic_names (list[str], optional): Nama asli tiap channel aktif (default: mic0..mic{N-1}).
                                           
     Returns:
         dict: Dictionary berisi TDOA untuk setiap pasangan (key: "micX-micY")
@@ -140,17 +144,22 @@ def calculate_all_tdoa(data, fs, channel_indices=None):
             channel_indices=channel_indices,
             smooth_ms=smooth_ms,
             dec=dec,
-            do_closure=do_closure
+            do_closure=do_closure,
+            mic_names=mic_names,
         )
 
     # Metode standar (GCC-PHAT atau Cross-Correlation)
     n_channels = data.shape[1]
     if channel_indices:
-        physical_indices = channel_indices
+        physical_indices = list(channel_indices)
     else:
-        physical_indices = range(n_channels)
+        physical_indices = list(range(n_channels))
         
     n_active = len(physical_indices)
+    if n_active < 2:
+        return {}
+
+    names = list(mic_names) if mic_names is not None else [f"mic{i}" for i in range(n_active)]
     logical_pairs = list(itertools.combinations(range(n_active), 2))
     
     results = {}
@@ -173,7 +182,7 @@ def calculate_all_tdoa(data, fs, channel_indices=None):
             else:
                 tdoa = calculate_cross_correlation(sig1, sig2, fs)
             
-        key = f"mic{log_idx1}-mic{log_idx2}"
+        key = f"{names[log_idx1]}-{names[log_idx2]}"
         results[key] = round(float(tdoa), 7)
         
     return results

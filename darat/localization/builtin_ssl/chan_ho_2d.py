@@ -61,36 +61,36 @@ def _chan_tdoa_2d(mic_positions: np.ndarray, tdoa: np.ndarray, c: float) -> Opti
     return pos_est
 
 
-def _get_tdoa(tdoa_dict: dict, m_i: str, m_j: str, n_mics: int) -> Optional[float]:
+def _get_tdoa(tdoa_dict: dict, m_i: str, m_j: str, mic_names: List[str]) -> Optional[float]:
     """Ambil TDOA (tau_i - tau_j) dengan transitivitas 1-hop."""
     if f"{m_i}-{m_j}" in tdoa_dict:
         return float(tdoa_dict[f"{m_i}-{m_j}"])
     if f"{m_j}-{m_i}" in tdoa_dict:
         return -float(tdoa_dict[f"{m_j}-{m_i}"])
-    for k in range(n_mics):
-        mid = f"mic{k}"
+    for mid in mic_names:
         if mid in (m_i, m_j):
             continue
-        v1 = tdoa_dict.get(f"{m_i}-{mid}") or (
-            -tdoa_dict[f"{mid}-{m_i}"] if f"{mid}-{m_i}" in tdoa_dict else None
-        )
-        v2 = tdoa_dict.get(f"{m_j}-{mid}") or (
-            -tdoa_dict[f"{mid}-{m_j}"] if f"{mid}-{m_j}" in tdoa_dict else None
-        )
+        v1 = tdoa_dict.get(f"{m_i}-{mid}")
+        if v1 is None and f"{mid}-{m_i}" in tdoa_dict:
+            v1 = -float(tdoa_dict[f"{mid}-{m_i}"])
+        v2 = tdoa_dict.get(f"{m_j}-{mid}")
+        if v2 is None and f"{mid}-{m_j}" in tdoa_dict:
+            v2 = -float(tdoa_dict[f"{mid}-{m_j}"])
         if v1 is not None and v2 is not None:
             return float(v1) - float(v2)
     return None
 
 
 def _get_tdoa_residual(
-    pos: np.ndarray, stations: np.ndarray, tdoa_dict: dict, c: float, n_mics: int
+    pos: np.ndarray, stations: np.ndarray, tdoa_dict: dict, c: float, mic_names: List[str]
 ) -> float:
     """Hitung total residual TDOA semua pasang mikrofon terhadap posisi kandidat 2D."""
+    n_mics = len(mic_names)
     ranges = np.linalg.norm(stations - pos, axis=1)
     res = 0.0
     for u in range(n_mics):
         for v in range(u + 1, n_mics):
-            val = _get_tdoa(tdoa_dict, f"mic{u}", f"mic{v}", n_mics)
+            val = _get_tdoa(tdoa_dict, mic_names[u], mic_names[v], mic_names)
             if val is None:
                 continue
             measured = val * c
@@ -152,7 +152,7 @@ def solve(event_data: dict, mic_positions: dict, config: dict) -> Tuple[Optional
             return [float(p["x"]), float(p["y"])]
         return [float(p[0]), float(p[1])]
 
-    stations_arr = np.array([_pos2d(f"mic{k}") for k in range(n_mics)])
+    stations_arr = np.array([_pos2d(m) for m in mic_names])
 
     candidates = []
 
@@ -161,9 +161,9 @@ def solve(event_data: dict, mic_positions: dict, config: dict) -> Tuple[Optional
         m0, m1, m2, m3 = perm
         sub_st = stations_arr[list(perm)]
 
-        t1 = _get_tdoa(tdoa_data, f"mic{m0}", f"mic{m1}", n_mics)
-        t2 = _get_tdoa(tdoa_data, f"mic{m0}", f"mic{m2}", n_mics)
-        t3 = _get_tdoa(tdoa_data, f"mic{m0}", f"mic{m3}", n_mics)
+        t1 = _get_tdoa(tdoa_data, mic_names[m0], mic_names[m1], mic_names)
+        t2 = _get_tdoa(tdoa_data, mic_names[m0], mic_names[m2], mic_names)
+        t3 = _get_tdoa(tdoa_data, mic_names[m0], mic_names[m3], mic_names)
 
         if any(v is None for v in [t1, t2, t3]):
             continue
@@ -198,7 +198,7 @@ def solve(event_data: dict, mic_positions: dict, config: dict) -> Tuple[Optional
     min_res = np.inf
     for cl in valid:
         mean_pos = np.mean(cl, axis=0)
-        res = _get_tdoa_residual(mean_pos, stations_arr, tdoa_data, c, n_mics)
+        res = _get_tdoa_residual(mean_pos, stations_arr, tdoa_data, c, mic_names)
         if res < min_res:
             min_res = res
             best_cluster = cl
